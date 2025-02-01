@@ -80,14 +80,12 @@ You can use any name and any number of records for each messaging platform confi
 
 ```
     "STARTUP_MESSAGE": true,
-    "GITHUB_PAT": "your github token (PAT)",
     "DEFAULT_DOT_STYLE": true,
     "HOUR_REPEAT": 2
 ```
 | Item   | Required   | Description   |
 |------------|------------|------------|
 | STARTUP_MESSAGE | true/false | On/Off startup message. | 
-| GITHUB_PAT | string | your github token (PAT). | 
 | DEFAULT_DOT_STYLE | true/false | Round/Square dots. |
 | HOUR_REPEAT | 2 | Set the poll period in hours. Minimum is 1 hour. | 
 ---
