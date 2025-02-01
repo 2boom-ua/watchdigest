@@ -4,7 +4,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    #image: ghcr.io/2boom-ua/watchdigest:latest
     container_name: watchdigest
     image: watchdigest:latest
     volumes:
