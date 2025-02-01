@@ -127,25 +127,53 @@ def getDockerData() -> tuple:
         logger.error(f"Error: {e}")
     return resource_data
 
+
+def get_ghcr_digest(owner, image, tag):
+    # Get token for public repository
+    auth_url = f"https://ghcr.io/token?scope=repository:{owner}/{image}:pull"
+    response = requests.get(auth_url)
+    
+    if response.status_code != 200:
+        raise Exception(f"Failed to get token: {response.text}")
+    
+    token = response.json().get("token")
+    
+    # Fetch manifest to get digest
+    manifest_url = f"https://ghcr.io/v2/{owner}/{image}/manifests/{tag}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.docker.distribution.manifest.v2+json"
+    }
+    
+    response = requests.head(manifest_url, headers=headers)
+    
+    if response.status_code == 200:
+        return response.headers.get("Docker-Content-Digest")
+    else:
+        raise Exception(f"Failed to get digest: {response.text}")
+
+
   
 def getDigestFromGithub(owner, image, tag) -> str:
     """Retrieves the latest digest for a Docker image from GHCR (Github Container Registry)."""
     digest = ""
-    token = github_token
-    url = f"https://api.github.com/users/{owner}/packages/container/{image}/versions"
+    try:
+        auth_url = f"https://ghcr.io/token?scope=repository:{owner}/{image}:pull"
+        response_token = requests.get(auth_url)
+        if response_token.status_code == 200:
+            token = response_token.json().get("token")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error: {e}")
+        return digest
+    manifest_url = f"https://ghcr.io/v2/{owner}/{image}/manifests/{tag}"
     headers = {
         "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28"
+        "Accept": "application/vnd.docker.distribution.manifest.v2+json"
     }
     try:
-        response = requests.get(url, headers=headers)
+        response = requests.head(manifest_url, headers=headers)
         if response.status_code == 200:
-            versions = response.json()      
-            for version in versions:
-                tags = version['metadata']['container'].get('tags', [])
-                if tag in tags:
-                    return version['name']
+            return response.headers.get("Docker-Content-Digest")
     except requests.exceptions.RequestException as e:
         logger.error(f"Error: {e}")
         return digest
@@ -222,7 +250,7 @@ def watchDigest():
         file.writelines(old_list)
     if result:
         SendMessage(f"{header_message}{''.join(result)}")
-        logger.info(f"{''.join(result).replace(orange_dot, '')}")
+        logger.info(f"{''.join(result).replace(orange_dot, '').replace('*', '').strip()}")
     else:
         logger.info("All images are completely up to date!")
     new_time = current_time + timedelta(minutes=hour_repeat*60)
@@ -250,10 +278,8 @@ if __name__ == "__main__":
             startup_message = config_json.get("STARTUP_MESSAGE", True)
             default_dot_style = config_json.get("DEFAULT_DOT_STYLE", True)
             hour_repeat = max(int(config_json.get("HOUR_REPEAT", 1)), 1)
-            github_token = config_json.get("GITHUB_PAT", "")
         except (json.JSONDecodeError, ValueError, TypeError, KeyError):
             startup_message, default_dot_style = True, True
-            github_token = ""
             hour_repeat = 2
             logger.error("Error or incorrect settings in config.json. Default settings will be used.")
         if not default_dot_style:
