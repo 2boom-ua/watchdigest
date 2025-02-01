@@ -100,7 +100,7 @@ cd watchdigest
 ---
 ## Docker
 ```bash
-touch data.db
+  touch data.db
 ```
 ```bash
   docker build -t watchdigest .
