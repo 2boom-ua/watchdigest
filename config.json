@@ -23,7 +23,6 @@
         ]
     },
     "STARTUP_MESSAGE": true,
-    "GITHUB_PAT": "your githuo token (PAT)",
     "DEFAULT_DOT_STYLE": true,
     "HOUR_REPEAT": 2
 }
