@@ -10,6 +10,6 @@ services:
       - ./config.json:/watchdigest/config.json
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      - TZ=Europe/Kyiv
+      - TZ=UTC
     restart: always
 
