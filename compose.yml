@@ -1,11 +1,7 @@
 version: "3.8"
 services:
   watchdigest:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    #image: ghcr.io/2boom-ua/watchdigest:latest
-    container_name: watchdigest
+    image: ghcr.io/2boom-ua/watchdigest:latest
     image: watchdigest:latest
     volumes:
       - ./config.json:/watchdigest/config.json
