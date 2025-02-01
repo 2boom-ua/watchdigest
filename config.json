@@ -1,216 +1,29 @@
 {
-    "TELEGRAM": {
-        "ENABLED": true,
-        "WEBHOOK_URL": [
-            "https://api.telegram.org/bot6516846080:AAExanW-S6amGEummCMH-h1Vo6FlbzUUy7M/sendMessage"
-        ],
-        "HEADER": [
-            {"Content-Type": "application/json"}
-        ],
-        "PYLOAD": [
-            {"chat_id": "677895454", "text": "message", "parse_mode": "Markdown"}
-        ],
-        "FORMAT_MESSAGE": [
-            "simplified"
-        ]
-    },
-    "WEBNTFY": {
-        "ENABLED": true,
-        "WEBHOOK_URL": [
-            "http://192.168.1.34:5511/messages"
-        ],
-        "HEADER": [
-            {"Content-Type": "application/json"}
-        ],
-        "PYLOAD": [
-            {"message": "message"}
-        ],
-        "FORMAT_MESSAGE": [
-            "markdown"
-        ]
-    },
-    "MATRIX": {
+    "CUSTOM_NAME": {
         "ENABLED": false,
         "WEBHOOK_URL": [
-            "https://matrix.nuc10.kyiv.ua/_matrix/client/r0/rooms/!QArWqaWtnVHBJllNDh:matrix.nuc10.kyiv.ua:matrix.nuc10.kyiv.ua/send/m.room.message?access_token=syt_bW9uYm90_kQCJAnWtvkmQIEHlrBrC_0QT2GS"
+            "first url",
+            "second url",
+            "...."
         ],
         "HEADER": [
-            {"Content-Type": "application/json"}
+            {"first JSON structure"},
+            {"second JSON structure"},
+            "...."
         ],
         "PYLOAD": [
-            {"msgtype": "m.text", "body": "message", "format": "org.matrix.custom.html", "formatted_body": "message"}
+            {"first JSON structure"},
+            {"second JSON structure"},
+            "...."
         ],
         "FORMAT_MESSAGE": [
-            "html"
-        ]
-    },
-    "APPRISE": {
-        "ENABLED": false,
-        "WEBHOOK_URL": [
-            "https://apprise.nuc10.kyiv.ua/notify/apprise"
-        ],
-        "HEADER": [
-            {"Content-Type": "application/json"}
-        ],
-        "PYLOAD": [
-            {"body": "message", "type": "info", "format": "markdown"}
-        ],
-        "FORMAT_MESSAGE": [
-            "markdown"
-        ]
-    },
-    "NTFY": {
-        "ENABLED": false,
-        "WEBHOOK_URL": [
-            "https://ntfy.nuc10.kyiv.ua/Pw1uFDLP59fV7mv2"
-        ],
-        "HEADER": [
-            {"Content-Type": "text/markdown"}
-        ],
-        "PYLOAD": [
-            {"data": "message"}
-        ],
-        "FORMAT_MESSAGE": [
-            "markdown"
-        ]
-    },
-    "PUMBLE": {
-        "ENABLED": false,
-        "WEBHOOK_URL": [
-            "https://api.pumble.com/workspaces/66c1d18b79eae87eb03eb5ce/incomingWebhooks/postMessage/yENx5rNJXYGpLlCkr54yrunF"
-        ],
-        "HEADER": [
-            {"Content-Type": "application/json"}
-        ],
-        "PYLOAD": [
-            {"text": "message"}
-        ],
-        "FORMAT_MESSAGE": [
-            "markdown"
-        ]
-    },
-    "MATTERMOST": {
-        "ENABLED": false,
-        "WEBHOOK_URL": [
-            "https://matterm.nuc10.kyiv.ua/hooks/yi7hmdy59fftmfrs1bhun97auw"
-        ],
-        "HEADER": [
-            {"Content-Type": "application/json"}
-        ],
-        "PYLOAD": [
-            {"text": "message"}
-        ],
-        "FORMAT_MESSAGE": [
-            "markdown"
-        ]
-    },
-    "ZULIP": {
-        "ENABLED": false,
-        "WEBHOOK_URL": [
-            "https://nuc10.zulipchat.com/api/v1/external/slack_incoming?api_key=ltlrWg8fWzQ7c5Qb3YoX2GtlrVoMuKfO"
-        ],
-        "HEADER": [
-            {"Content-Type": "application/json"}
-        ],
-        "PYLOAD": [
-            {"text": "message"}
-        ],
-        "FORMAT_MESSAGE": [
-            "simplified"
-        ]
-    },
-    "FLOCK": {
-        "ENABLED": false,
-        "WEBHOOK_URL": [
-            "https://api.flock.com/hooks/sendMessage/a4b5a8ae-7788-470e-a856-8d9dda9f0f27"
-        ],
-        "HEADER": [
-            {"Content-Type": "application/json"}
-        ],
-        "PYLOAD": [
-            {"text": "message"}
-        ],
-        "FORMAT_MESSAGE": [
-            "simplified"
-        ]
-    },
-    "SLACK": {
-        "ENABLED": false,
-        "WEBHOOK_URL": [
-            "https://hooks.slack.com/services/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"
-        ],
-        "HEADER": [
-            {"Content-Type": "application/json"}
-        ],
-        "PYLOAD": [
-            {"text": "message", "mrkdwn": "True"}
-        ],
-        "FORMAT_MESSAGE": [
-            "simplified"
-        ]
-    },
-    "ROCKET.CHAT": {
-        "ENABLED": false,
-        "WEBHOOK_URL": [
-            "https://rocket.nuc10.kyiv.ua/hooks/670437b4c5ef2f80089d59ab/oj4hKCJo4mKhdgxctvJwfvTrfHNuQtWem6mHSoNeHTzhEBvk"
-        ],
-        "HEADER": [
-            {"Content-Type": "application/json"}
-        ],
-        "PYLOAD": [
-            {"text": "message"}
-        ],
-        "FORMAT_MESSAGE": [
-            "simplified"
-        ]
-    },
-    "GOTIFY": {
-        "ENABLED": false,
-        "WEBHOOK_URL": [
-            "https://gotify.nuc10.kyiv.ua/message?token=A0yf0wMLtqWXQIR"
-        ],
-        "HEADER": [
-            {"Content-Type": "application/json"}
-        ],
-        "PYLOAD": [
-            {"title": "title", "message": "message", "priority": 0, "extras": {"client::display": {"contentType": "text/markdown"}}}
-        ],
-        "FORMAT_MESSAGE": [
-            "markdown"
-        ]
-    },
-    "PUSHOVER": {
-        "ENABLED": false,
-        "WEBHOOK_URL": [
-            "https://api.pushover.net/1/messages.json"
-        ],
-        "HEADER": [
-            {"Content-type": "application/json"}
-        ],
-        "PYLOAD": [
-            {"token": "aqcia6zfnxvyg4n2fpykain37rom19", "user": "uu6tg8gbsstu13sqjx1dqfmqump5v4", "title": "header", "message": "message", "html": "1"}
-        ],
-        "FORMAT_MESSAGE": [
-            "html"
-        ]
-    },
-    "PUSHBULLET": {
-        "ENABLED": false,
-        "WEBHOOK_URL": [
-            "https://api.pushbullet.com/v2/pushes"
-        ],
-        "HEADER": [
-            {"Content-Type": "application/json", "Access-Token": "o.ALgDiSTT6WaLBLMERm55r1F81inxF1cH"}
-        ],
-        "PYLOAD": [
-            {"type": "note", "title": "header", "body": "message"}
-        ],
-        "FORMAT_MESSAGE": [
-            "text"
+            "markdown",
+            "html",
+            "...."
         ]
     },
     "STARTUP_MESSAGE": true,
-    "GITHUB_PAT": "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",
+    "GITHUB_PAT": "your githuo token (PAT)",
     "DEFAULT_DOT_STYLE": true,
-    "HOUR_REPEAT": 1
+    "HOUR_REPEAT": 2
 }
