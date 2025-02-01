@@ -126,6 +126,7 @@ services:
     container_name: watchdigest
     volumes:
       - ./config.json:/watchdigest/config.json
+      - ./data.db:/watchdigest/data.db
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - TZ=UTC
