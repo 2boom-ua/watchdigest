@@ -157,20 +157,18 @@ def get_ghcr_digest(owner, image, tag):
 def getDigestFromGithub(owner, image, tag) -> str:
     """Retrieves the latest digest for a Docker image from GHCR (Github Container Registry)."""
     digest = ""
+    auth_url = f"https://ghcr.io/token?scope=repository:{owner}/{image}:pull"
+    manifest_url = f"https://ghcr.io/v2/{owner}/{image}/manifests/{tag}"
     try:
-        auth_url = f"https://ghcr.io/token?scope=repository:{owner}/{image}:pull"
         response_token = requests.get(auth_url)
         if response_token.status_code == 200:
             token = response_token.json().get("token")
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Error: {e}")
-        return digest
-    manifest_url = f"https://ghcr.io/v2/{owner}/{image}/manifests/{tag}"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.docker.distribution.manifest.v2+json"
-    }
-    try:
+        else:
+            return digest
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.docker.distribution.manifest.v2+json"
+        }
         response = requests.head(manifest_url, headers=headers)
         if response.status_code == 200:
             return response.headers.get("Docker-Content-Digest")
