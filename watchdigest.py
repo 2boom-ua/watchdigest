@@ -128,7 +128,7 @@ def getDockerData() -> tuple:
     return resource_data
 
 
-def get_docker_digest(registry: str, owner: str, image: str, tag: str) -> str:
+def getDockerDigest(registry: str, owner: str, image: str, tag: str) -> str:
     """Retrieves the latest digest for a Docker image from GHCR (GitHub Container Registry), Docker Hub, GitLab Container Registry, or a custom registry."""
     digest = token = ""
     max_retries, retry_delay = 3, 2
@@ -148,30 +148,31 @@ def get_docker_digest(registry: str, owner: str, image: str, tag: str) -> str:
     try:
         if registry in ["ghcr.io", "docker.io", "registry.gitlab.com"]:
             response_token = requests.get(auth_url, params=auth_params if registry == "docker.io" else None)
+            
         else:
             response_token = requests.get(auth_url)
-        
         if response_token.status_code == 200:
             token = response_token.json().get("token", "")
         else:
             return digest
         headers = {
             "Authorization": f"Bearer {token}",
-            "Accept": "application/vnd.docker.distribution.manifest.v2+json"
+            "Accept": ", ".join([
+                "application/vnd.docker.distribution.manifest.v2+json",
+                "application/vnd.docker.distribution.manifest.list.v2+json",
+                "application/vnd.oci.image.manifest.v1+json"
+            ])
         }
         for attempt in range(max_retries):
             response = requests.head(manifest_url, headers=headers)
-            
             if response.status_code == 200:
                 return response.headers.get("Docker-Content-Digest", "")
             elif response.status_code == 404:
                 return digest
             else:
                 time.sleep(retry_delay)
-        logging.error(f"Failed to get digest after {max_retries} attempts")
     except requests.exceptions.RequestException as e:
-        logging.error(f"Error: {e}")
-    
+        logger.error(f"Error: {e}")
     return digest
 
 
@@ -183,7 +184,7 @@ def watchDigest():
     for dockerdata in getDockerData():
         local_digest, source, owner, image, tag = dockerdata.split()
         if source.startswith(("docker.io", "ghcr.io", "registry.gitlab.com", "registry.")):
-            digest = get_docker_digest(source, owner, image, tag)
+            digest = getDockerDigest(source, owner, image, tag)
         else:
             continue
         if digest and digest != local_digest:
