@@ -128,97 +128,51 @@ def getDockerData() -> tuple:
     return resource_data
 
 
-def get_ghcr_digest(owner, image, tag):
-    # Get token for public repository
-    auth_url = f"https://ghcr.io/token?scope=repository:{owner}/{image}:pull"
-    response = requests.get(auth_url)
-    
-    if response.status_code != 200:
-        raise Exception(f"Failed to get token: {response.text}")
-    
-    token = response.json().get("token")
-    
-    # Fetch manifest to get digest
-    manifest_url = f"https://ghcr.io/v2/{owner}/{image}/manifests/{tag}"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.docker.distribution.manifest.v2+json"
-    }
-    
-    response = requests.head(manifest_url, headers=headers)
-    
-    if response.status_code == 200:
-        return response.headers.get("Docker-Content-Digest")
-    else:
-        raise Exception(f"Failed to get digest: {response.text}")
-
-
-  
-def getDigestFromGithub(owner, image, tag) -> str:
-    """Retrieves the latest digest for a Docker image from GHCR (Github Container Registry)."""
-    digest = ""
-    auth_url = f"https://ghcr.io/token?scope=repository:{owner}/{image}:pull"
-    manifest_url = f"https://ghcr.io/v2/{owner}/{image}/manifests/{tag}"
-    try:
-        response_token = requests.get(auth_url)
-        if response_token.status_code == 200:
-            token = response_token.json().get("token")
-        else:
-            return digest
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/vnd.docker.distribution.manifest.v2+json"
-        }
-        response = requests.head(manifest_url, headers=headers)
-        if response.status_code == 200:
-            return response.headers.get("Docker-Content-Digest")
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Error: {e}")
-        return digest
-
-
-def getDigestFromGitlab(owner, image, tag) -> str:
-    """Fetch the image digest from GitLab Hub."""
-    digest = ""
-    manifest_url = f"https://registry.gitlab.com/v2/{owner}/{image}/manifests/{tag}"
-    headers = {
-        "Accept": "application/vnd.docker.distribution.manifest.v2+json"
-    }
-    try:
-        response = requests.get(manifest_url, headers=headers, timeout=10)
-        if response.status_code == 200:
-            digest = response.headers.get("Docker-Content-Digest")
-        return digest
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Error: {e}")
-        return digest
-
-
-def getDigestFromDocker(owner, image, tag) -> str:
-    """Retrieves the latest digest for a Docker image from HUB (Docker Hub)."""
-    digest = ""
-    auth_url = f"https://auth.docker.io/token"
-    auth_params = {
-        "service": "registry.docker.io",
-        "scope": f"repository:{owner}/{image}:pull"
-    }
-    try:
-        auth_response = requests.get(auth_url, params=auth_params)
-        if auth_response.status_code == 200:
-            token = auth_response.json().get("token")
-        else:
-            return digest
+def get_docker_digest(registry: str, owner: str, image: str, tag: str) -> str:
+    """Retrieves the latest digest for a Docker image from GHCR (GitHub Container Registry), Docker Hub, GitLab Container Registry, or a custom registry."""
+    digest = token = ""
+    max_retries, retry_delay = 3, 2
+    if registry == "ghcr.io":
+        auth_url = f"https://ghcr.io/token?scope=repository:{owner}/{image}:pull"
+        manifest_url = f"https://ghcr.io/v2/{owner}/{image}/manifests/{tag}"
+    elif registry == "docker.io":
+        auth_url = "https://auth.docker.io/token"
+        auth_params = {"service": "registry.docker.io", "scope": f"repository:{owner}/{image}:pull"}
         manifest_url = f"https://registry-1.docker.io/v2/{owner}/{image}/manifests/{tag}"
+    elif registry == "registry.gitlab.com":
+        auth_url = f"https://gitlab.com/jwt/auth?service=container_registry&scope=repository:{owner}/{image}:pull"
+        manifest_url = f"https://registry.gitlab.com/v2/{owner}/{image}/manifests/{tag}"
+    else:
+        auth_url = f"https://{registry}/v2/token"
+        manifest_url = f"https://{registry}/v2/{owner}/{image}/manifests/{tag}"
+    try:
+        if registry in ["ghcr.io", "docker.io", "registry.gitlab.com"]:
+            response_token = requests.get(auth_url, params=auth_params if registry == "docker.io" else None)
+        else:
+            response_token = requests.get(auth_url)
+        
+        if response_token.status_code == 200:
+            token = response_token.json().get("token", "")
+        else:
+            return digest
         headers = {
             "Authorization": f"Bearer {token}",
             "Accept": "application/vnd.docker.distribution.manifest.v2+json"
         }
-        manifest_response = requests.get(manifest_url, headers=headers)
-        if manifest_response.status_code == 200:
-            return manifest_response.headers.get("Docker-Content-Digest")
+        for attempt in range(max_retries):
+            response = requests.head(manifest_url, headers=headers)
+            
+            if response.status_code == 200:
+                return response.headers.get("Docker-Content-Digest", "")
+            elif response.status_code == 404:
+                return digest
+            else:
+                time.sleep(retry_delay)
+        logging.error(f"Failed to get digest after {max_retries} attempts")
     except requests.exceptions.RequestException as e:
-        logger.error(f"Error: {e}")
-        return digest
+        logging.error(f"Error: {e}")
+    
+    return digest
 
 
 def watchDigest():
@@ -228,14 +182,8 @@ def watchDigest():
     current_time = datetime.now()
     for dockerdata in getDockerData():
         local_digest, source, owner, image, tag = dockerdata.split()
-        if source in {"docker.io", "ghcr.io"}:
-            digest = (getDigestFromDocker(owner, image, tag) if source in {"docker.io", "registry."} else getDigestFromGithub(owner, image, tag))
-        elif source == "registry.gitlab.com":
-            digest = getDigestFromGitlab(owner, image, tag)
-        elif source == "registry.digitalocean.com":
-            continue
-        elif source.startswith(("registry.", "docker.io")):
-            digest = getDigestFromDocker(owner, image, tag)
+        if source.startswith(("docker.io", "ghcr.io", "registry.gitlab.com", "registry.")):
+            digest = get_docker_digest(source, owner, image, tag)
         else:
             continue
         if digest and digest != local_digest:
