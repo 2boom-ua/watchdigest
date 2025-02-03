@@ -212,8 +212,7 @@ def watchDigest():
     if result:
         SendMessage(f"{header_message}{''.join(result)}")
         logger.info(f"{''.join(result).replace(orange_dot, '').replace('*', '').strip()}")
-    else:
-        logger.info("Verification has been completed!")
+    logger.info("Verification has been completed!")
     logger.info(f"Total images: {count_all}, monitoring: {count_with_digest}.")
     new_time = current_time + timedelta(minutes=hour_repeat*60)
     logger.info(f"Scheduled next run: {new_time.strftime('%Y-%m-%d %H:%M:%S')}")
