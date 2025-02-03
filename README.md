@@ -91,6 +91,24 @@ You can use any name and any number of records for each messaging platform confi
 | GHCR_PAT | string/empty string | **Optional:** GHCR_PAT (GitHub Container Registry Personal Access Token) is a scoped authentication token used to access GitHub's container registry (ghcr.io).  |
 | HOUR_REPEAT | 2 | Set the poll period in hours. Minimum is 1 hour. | 
 ---
+### How to Get a GitHub Container Registry (GHCR) Personal Access Token (PAT)
+#### 1️⃣ Generate a Personal Access Token (PAT)
+1. Go to [GitHub Personal Access Tokens](https://github.com/settings/tokens).
+2. Click **"Generate new token (classic)"**.
+3. Set a **name** and **expiration date**.
+4. Select the following **scopes**:
+   - `read:packages` → **Pull images**
+   - `write:packages` → **Push images**
+   - `delete:packages` (optional) → **Delete images**
+   - `repo` (if working with private repositories)
+5. Click **"Generate token"** and **save** it securely.
+
+#### 2️⃣ Authenticate with GHCR
+Run the following command in your terminal:
+```sh
+echo YOUR_PAT | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
+```
+---
 
 ### Clone the repository:
 ```
