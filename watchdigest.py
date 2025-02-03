@@ -94,37 +94,27 @@ def SendMessage(message: str):
         SendRequest(url, pyload_json, data, header_json)
 
 
-def getDockerData() -> tuple:
-    """Retrieve detailed data for Docker images"""
+def getDockerData() -> list:
+    """Retrieve detailed data for Docker images."""
     resource_data = []
     try:
         docker_client = docker.DockerClient(base_url='unix://var/run/docker.sock', version='auto')
         images = docker_client.images.list()
-        if images:
-            for image in images:
-                if not image.tags:
-                    continue
-                if not ":" in image.tags[0]:
-                    continue
-                image_full, image_tag = image.tags[0].split(':')
-                parts = image_full.split('/')
-                if len(parts) == 3:
-                    image_source, image_owner, image_name = parts                       
-                elif len(parts) == 1:
-                    image_source = "local"
-                    image_owner = "dockerfile"
-                    image_name = image_full
-                else:
-                    image_source = "docker.io"
-                    image_owner, image_name = parts
-
-                if image.attrs["RepoDigests"]:
-                    digest = image.attrs["RepoDigests"][0].split("@")[1]
-                else:
-                    digest = "NoDigest"
-                resource_data.append(f"{digest} {image_source} {image_owner} {image_name} {image_tag}")
+        for image in images:
+            if not image.tags or ":" not in image.tags[0]:
+                continue
+            image_full, image_tag = image.tags[0].split(':', 1)
+            parts = image_full.split('/')
+            if len(parts) == 3:
+                image_source, image_owner, image_name = parts
+            elif len(parts) == 1:
+                image_source, image_owner, image_name = "local", "dockerfile", image_full
+            else:
+                image_source, image_owner, image_name = "docker.io", *parts
+            digest = image.attrs.get("RepoDigests", ["NoDigest"])[0].split("@")[-1]
+            resource_data.append(f"{digest} {image_source} {image_owner} {image_name} {image_tag}")
     except (docker.errors.DockerException, Exception) as e:
-        logger.error(f"Error: {e}")
+        logger.error(f"Error retrieving Docker data: {e}")
     return resource_data
 
 
@@ -199,7 +189,7 @@ def watchDigest():
         SendMessage(f"{header_message}{''.join(result)}")
         logger.info(f"{''.join(result).replace(orange_dot, '').replace('*', '').strip()}")
     else:
-        logger.info("All images are completely up to date!")
+        logger.info("Verification has been completed!")
     new_time = current_time + timedelta(minutes=hour_repeat*60)
     logger.info(f"Scheduled next run: {new_time.strftime('%Y-%m-%d %H:%M:%S')}")
 
