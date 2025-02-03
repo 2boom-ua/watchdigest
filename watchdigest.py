@@ -95,36 +95,43 @@ def SendMessage(message: str):
 
 
 def getDockerData() -> list:
-    """Retrieve detailed data for Docker images."""
+    """Retrieve detailed data for Docker images"""
     resource_data = []
     try:
         docker_client = docker.DockerClient(base_url='unix://var/run/docker.sock', version='auto')
         images = docker_client.images.list()
-        for image in images:
-            if not image.tags or ":" not in image.tags[0]:
-                continue
-            image_full, image_tag = image.tags[0].split(':', 1)
-            parts = image_full.split('/')
-            if len(parts) == 3:
-                image_source, image_owner, image_name = parts
-            elif len(parts) == 1:
-                image_source, image_owner, image_name = "local", "dockerfile", image_full
-            else:
-                image_source, image_owner, image_name = "docker.io", *parts
-            digest = image.attrs.get("RepoDigests", ["NoDigest"])[0].split("@")[-1]
-            resource_data.append(f"{digest} {image_source} {image_owner} {image_name} {image_tag}")
+        if images:
+            for image in images:
+                if not image.tags or ":" not in image.tags[0]:
+                    continue
+                image_full, image_tag = image.tags[0].split(':', 1)
+                parts = image_full.split('/')
+                if len(parts) == 3:
+                    image_source, image_owner, image_name = parts
+                elif len(parts) == 2:
+                    image_source = "docker.io"
+                    image_owner, image_name = parts
+                elif len(parts) == 1:
+                    image_source, image_owner, image_name = "local", "dockerfile", image_full
+                else:
+                    image_source, image_owner, image_name = "docker.io", "library", parts[0]
+                if image.attrs["RepoDigests"]:
+                    digest = image.attrs["RepoDigests"][0].split("@")[1]
+                else:
+                    digest = "NoDigest"
+                resource_data.append(f"{digest} {image_source} {image_owner} {image_name} {image_tag}")
     except (docker.errors.DockerException, Exception) as e:
-        logger.error(f"Error retrieving Docker data: {e}")
+        logger.error(f"Error: {e}")
     return resource_data
 
 
-def getDockerDigest(registry: str, owner: str, image: str, tag: str) -> str:
-    """Retrieves the latest digest for a Docker image from GHCR (GitHub Container Registry), Docker Hub, GitLab Container Registry, or a custom registry."""
+def getDockerDigest(registry: str, owner: str, image: str, tag: str, ghcr_pat: str = None) -> str:
+    """Retrieves the latest digest for a Docker image from GHCR, Docker Hub, GitLab, or a custom registry."""
     digest = token = ""
     max_retries, retry_delay = 3, 2
     if registry == "ghcr.io":
         auth_url = f"https://ghcr.io/token?scope=repository:{owner}/{image}:pull"
-        manifest_url = f"https://ghcr.io/v2/{owner}/{image}/manifests/{tag}"
+        manifest_url = f"https://api.github.com/users/{owner}/packages/container/{image}/versions" if ghcr_pat and registry == "ghcr.io" else f"https://ghcr.io/v2/{owner}/{image}/manifests/{tag}"
     elif registry == "docker.io":
         auth_url = "https://auth.docker.io/token"
         auth_params = {"service": "registry.docker.io", "scope": f"repository:{owner}/{image}:pull"}
@@ -135,28 +142,41 @@ def getDockerDigest(registry: str, owner: str, image: str, tag: str) -> str:
     else:
         auth_url = f"https://{registry}/v2/token"
         manifest_url = f"https://{registry}/v2/{owner}/{image}/manifests/{tag}"
+
     try:
-        if registry in ["ghcr.io", "docker.io", "registry.gitlab.com"]:
-            response_token = requests.get(auth_url, params=auth_params if registry == "docker.io" else None)
-            
+        if registry == "ghcr.io" and ghcr_pat:
+            token = ghcr_pat
         else:
-            response_token = requests.get(auth_url)
-        if response_token.status_code == 200:
-            token = response_token.json().get("token", "")
-        else:
-            return digest
+            if registry in ["ghcr.io", "docker.io", "registry.gitlab.com"]:
+                response_token = requests.get(auth_url, params=auth_params if registry == "docker.io" else None)
+            else:
+                response_token = requests.get(auth_url)
+    
+            if response_token.status_code == 200:
+                token = response_token.json().get("token", "")
+            else:
+                return digest
         headers = {
             "Authorization": f"Bearer {token}",
+            "X-GitHub-Api-Version": "2022-11-28",
             "Accept": ", ".join([
                 "application/vnd.docker.distribution.manifest.v2+json",
                 "application/vnd.docker.distribution.manifest.list.v2+json",
-                "application/vnd.oci.image.manifest.v1+json"
+                "application/vnd.oci.image.manifest.v1+json",
+                "application/vnd.github+json"
             ])
         }
         for attempt in range(max_retries):
-            response = requests.head(manifest_url, headers=headers)
+            response = requests.get(manifest_url, headers=headers) if ghcr_pat and registry == "ghcr.io" else requests.head(manifest_url, headers=headers)
             if response.status_code == 200:
-                return response.headers.get("Docker-Content-Digest", "")
+                if ghcr_pat and registry == "ghcr.io":
+                    versions = response.json()      
+                    for version in versions:
+                        tags = version['metadata']['container'].get('tags', [])
+                        if tag in tags:
+                            return version['name']
+                else:
+                    return response.headers.get("Docker-Content-Digest", "")
             elif response.status_code == 404:
                 return digest
             else:
@@ -171,14 +191,18 @@ def watchDigest():
     global old_list
     new_list = result = []
     current_time = datetime.now()
+    count_all = count_with_digest = 0
     for dockerdata in getDockerData():
         local_digest, source, owner, image, tag = dockerdata.split()
         if source.startswith(("docker.io", "ghcr.io", "registry.gitlab.com", "registry.")):
-            digest = getDockerDigest(source, owner, image, tag)
+            digest = getDockerDigest(source, owner, image, tag, ghcr_pat)
         else:
             continue
+        if digest:
+            count_with_digest += 1
         if digest and digest != local_digest:
             new_list.append(f"{orange_dot} *{owner}/{image}*: outdated!\n")
+        count_all += 1
     if new_list:
         if len(new_list) >= len(old_list):
             result = [item for item in new_list if item not in old_list]
@@ -190,6 +214,7 @@ def watchDigest():
         logger.info(f"{''.join(result).replace(orange_dot, '').replace('*', '').strip()}")
     else:
         logger.info("Verification has been completed!")
+    logger.info(f"Total images: {count_all}, monitoring: {count_with_digest}.")
     new_time = current_time + timedelta(minutes=hour_repeat*60)
     logger.info(f"Scheduled next run: {new_time.strftime('%Y-%m-%d %H:%M:%S')}")
 
@@ -214,15 +239,16 @@ if __name__ == "__main__":
         try:
             startup_message = config_json.get("STARTUP_MESSAGE", True)
             default_dot_style = config_json.get("DEFAULT_DOT_STYLE", True)
+            ghcr_pat = config_json.get("GHCR_PAT", "")
             hour_repeat = max(int(config_json.get("HOUR_REPEAT", 1)), 1)
         except (json.JSONDecodeError, ValueError, TypeError, KeyError):
             startup_message, default_dot_style = True, True
-            hour_repeat = 2
+            hour_repeat, ghcr_pat = 2, ""
             logger.error("Error or incorrect settings in config.json. Default settings will be used.")
         if not default_dot_style:
             dots = square_dots
         orange_dot, green_dot, red_dot, yellow_dot = dots["orange"], dots["green"], dots["red"], dots["yellow"]
-        no_messaging_keys = ["GITHUB_PAT", "STARTUP_MESSAGE", "DEFAULT_DOT_STYLE", "HOUR_REPEAT"]
+        no_messaging_keys = ["GHCR_PAT", "STARTUP_MESSAGE", "DEFAULT_DOT_STYLE", "HOUR_REPEAT"]
         messaging_platforms = list(set(config_json) - set(no_messaging_keys))
         for platform in messaging_platforms:
             if config_json[platform].get("ENABLED", False):
@@ -237,9 +263,11 @@ if __name__ == "__main__":
         monitoring_message = "\n".join([*sorted(monitoring_message.splitlines()), ""])
         st_message = "Yes" if startup_message else "No"
         dt_style = "Round" if default_dot_style else "Square"
+        pt_ghcr = "Yes" if ghcr_pat else "No"
         monitoring_message += (
             f"- startup message: {st_message},\n"
             f"- dot style: {dt_style},\n"
+            f"- use GHCR PAT: {pt_ghcr},\n"
             f"- polling period: {hour_repeat} hours."
         )
         if all(value in globals() for value in ["platform_webhook_url", "platform_header", "platform_pyload", "platform_format_message"]):
