@@ -88,7 +88,7 @@ You can use any name and any number of records for each messaging platform confi
 |------------|------------|------------|
 | STARTUP_MESSAGE | true/false | On/Off startup message. | 
 | DEFAULT_DOT_STYLE | true/false | Round/Square dots. |
-| GHCR_PAT | string | GHCR_PAT (GitHub Container Registry Personal Access Token) is a scoped authentication token used to access GitHub's container registry (ghcr.io).  |
+| GHCR_PAT | string or empty string | **Optional:** GHCR_PAT (GitHub Container Registry Personal Access Token) is a scoped authentication token used to access GitHub's container registry (ghcr.io).  |
 | HOUR_REPEAT | 2 | Set the poll period in hours. Minimum is 1 hour. | 
 ---
 
