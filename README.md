@@ -102,12 +102,6 @@ You can use any name and any number of records for each messaging platform confi
    - `delete:packages` (optional) → **Delete images**
    - `repo` (if working with private repositories)
 5. Click **"Generate token"** and **save** it securely.
-
-#### Authenticate with GHCR
-Run the following command in your terminal:
-```sh
-echo YOUR_PAT | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
-```
 ---
 
 ### Clone the repository:
