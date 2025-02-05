@@ -1,6 +1,6 @@
 ## Docker monitoring tool that tracks Docker image updates
 
-WatchDigest is a Python-based monitoring tool that tracks Docker image updates by comparing local digests with remote registries (Docker Hub, GitHub Container Registry, GitLab and others). It periodically checks for outdated images and sends notifications via webhooks.
+WatchDigest is a monitoring tool that tracks Docker image updates by comparing local digests with remote registries (Docker Hub, GitHub Container Registry, GitLab and others). It periodically checks for outdated images and sends notifications via webhooks.
 
 ### Features:
 Supports multiple container registries (docker.io, ghcr.io, registry.gitlab.com, etc.).
