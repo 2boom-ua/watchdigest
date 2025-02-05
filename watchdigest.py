@@ -131,7 +131,10 @@ def getDockerDigest(registry: str, owner: str, image: str, tag: str, ghcr_pat: s
     max_retries, retry_delay = 3, 2
     if registry == "ghcr.io":
         auth_url = f"https://ghcr.io/token?scope=repository:{owner}/{image}:pull"
-        manifest_url = f"https://api.github.com/users/{owner}/packages/container/{image}/versions" if ghcr_pat and registry == "ghcr.io" else f"https://ghcr.io/v2/{owner}/{image}/manifests/{tag}"
+        manifest_url = (
+            f"https://api.github.com/users/{owner}/packages/container/{image}/versions"
+            if ghcr_pat else f"https://ghcr.io/v2/{owner}/{image}/manifests/{tag}"
+        )
     elif registry == "docker.io":
         auth_url = "https://auth.docker.io/token"
         auth_params = {"service": "registry.docker.io", "scope": f"repository:{owner}/{image}:pull"}
@@ -142,20 +145,17 @@ def getDockerDigest(registry: str, owner: str, image: str, tag: str, ghcr_pat: s
     else:
         auth_url = f"https://{registry}/v2/token"
         manifest_url = f"https://{registry}/v2/{owner}/{image}/manifests/{tag}"
-
     try:
         if registry == "ghcr.io" and ghcr_pat:
             token = ghcr_pat
         else:
-            if registry in ["ghcr.io", "docker.io", "registry.gitlab.com"]:
-                response_token = requests.get(auth_url, params=auth_params if registry == "docker.io" else None)
-            else:
-                response_token = requests.get(auth_url)
-    
+            response_token = requests.get(auth_url, params=auth_params if registry == "docker.io" else None)
+        
             if response_token.status_code == 200:
                 token = response_token.json().get("token", "")
             else:
                 return digest
+
         headers = {
             "Authorization": f"Bearer {token}",
             "X-GitHub-Api-Version": "2022-11-28",
@@ -170,17 +170,16 @@ def getDockerDigest(registry: str, owner: str, image: str, tag: str, ghcr_pat: s
             response = requests.get(manifest_url, headers=headers) if ghcr_pat and registry == "ghcr.io" else requests.head(manifest_url, headers=headers)
             if response.status_code == 200:
                 if ghcr_pat and registry == "ghcr.io":
-                    versions = response.json()      
+                    versions = response.json()
                     for version in versions:
-                        tags = version['metadata']['container'].get('tags', [])
-                        if tag in tags:
+                        if tag in version.get('metadata', {}).get('container', {}).get('tags', []):
                             return version['name']
                 else:
                     return response.headers.get("Docker-Content-Digest", "")
-            elif response.status_code == 404:
+            if response.status_code == 404:
                 return digest
-            else:
-                time.sleep(retry_delay)
+            time.sleep(retry_delay)
+
     except requests.exceptions.RequestException as e:
         logger.error(f"Error: {e}")
     return digest
@@ -212,7 +211,7 @@ def watchDigest():
     if result:
         SendMessage(f"{header_message}{''.join(result)}")
         logger.info(f"{''.join(result).replace(orange_dot, '').replace('*', '').strip()}")
-    logger.info("Verification has been completed!")
+    logger.info("Process complete!")
     logger.info(f"Total images: {count_all}, monitoring: {count_with_digest}.")
     new_time = current_time + timedelta(minutes=hour_repeat*60)
     logger.info(f"Scheduled next run: {new_time.strftime('%Y-%m-%d %H:%M:%S')}")
