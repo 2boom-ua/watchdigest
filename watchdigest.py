@@ -20,7 +20,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
-logger = logging.getLogger("whatchdigesty")
+logger = logging.getLogger("whatchdigest")
 
 
 def getBaseUrl(url):
@@ -115,10 +115,7 @@ def getDockerData() -> list:
                     image_source, image_owner, image_name = "local", "dockerfile", image_full
                 else:
                     image_source, image_owner, image_name = "docker.io", "library", parts[0]
-                if image.attrs["RepoDigests"]:
-                    digest = image.attrs["RepoDigests"][0].split("@")[1]
-                else:
-                    digest = "NoDigest"
+                digest = image.attrs["RepoDigests"][0].split("@")[1] if image.attrs.get("RepoDigests") else "NoDigest"
                 resource_data.append(f"{digest} {image_source} {image_owner} {image_name} {image_tag}")
     except (docker.errors.DockerException, Exception) as e:
         logger.error(f"Error: {e}")
@@ -150,12 +147,10 @@ def getDockerDigest(registry: str, owner: str, image: str, tag: str, ghcr_pat: s
             token = ghcr_pat
         else:
             response_token = requests.get(auth_url, params=auth_params if registry == "docker.io" else None)
-        
             if response_token.status_code == 200:
                 token = response_token.json().get("token", "")
             else:
                 return digest
-
         headers = {
             "Authorization": f"Bearer {token}",
             "X-GitHub-Api-Version": "2022-11-28",
@@ -179,7 +174,6 @@ def getDockerDigest(registry: str, owner: str, image: str, tag: str, ghcr_pat: s
             if response.status_code == 404:
                 return digest
             time.sleep(retry_delay)
-
     except requests.exceptions.RequestException as e:
         logger.error(f"Error: {e}")
     return digest
@@ -212,7 +206,7 @@ def watchDigest():
         SendMessage(f"{header_message}{''.join(result)}")
         logger.info(f"{''.join(result).replace(orange_dot, '').replace('*', '').strip()}")
     logger.info("Process complete!")
-    logger.info(f"Total images: {count_all}, monitoring: {count_with_digest}.")
+    logger.info(f"{count_all} local digests tracked, {count_with_digest} completed.")
     new_time = current_time + timedelta(minutes=hour_repeat*60)
     logger.info(f"Scheduled next run: {new_time.strftime('%Y-%m-%d %H:%M:%S')}")
 
