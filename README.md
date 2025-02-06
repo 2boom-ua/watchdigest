@@ -141,7 +141,7 @@ services:
       - ./data.db:/watchdigest/data.db
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      - TZ=UTC
+      - TZ=Etc/UTC
     restart: always
 ```
 
