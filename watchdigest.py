@@ -207,7 +207,7 @@ def watchDigest():
         logger.info(f"{''.join(result).replace(orange_dot, '').replace('*', '').strip()}")
     logger.info("Process complete!")
     logger.info(f"{count_all} local digests tracked, {count_with_digest} completed.")
-    new_time = current_time + timedelta(minutes=hour_repeat*60)
+    new_time = current_time + timedelta(minutes=min_repeat)
     logger.info(f"Scheduled next run: {new_time.strftime('%Y-%m-%d %H:%M:%S')}")
 
 
@@ -232,15 +232,15 @@ if __name__ == "__main__":
             startup_message = config_json.get("STARTUP_MESSAGE", True)
             default_dot_style = config_json.get("DEFAULT_DOT_STYLE", True)
             ghcr_pat = config_json.get("GHCR_PAT", "")
-            hour_repeat = max(int(config_json.get("HOUR_REPEAT", 1)), 1)
+            min_repeat = max(int(config_json.get("MIN_REPEAT", 15)), 15)
         except (json.JSONDecodeError, ValueError, TypeError, KeyError):
             startup_message, default_dot_style = True, True
-            hour_repeat, ghcr_pat = 2, ""
+            min_repeat, ghcr_pat = 2, ""
             logger.error("Error or incorrect settings in config.json. Default settings will be used.")
         if not default_dot_style:
             dots = square_dots
         orange_dot, green_dot, red_dot, yellow_dot = dots["orange"], dots["green"], dots["red"], dots["yellow"]
-        no_messaging_keys = ["GHCR_PAT", "STARTUP_MESSAGE", "DEFAULT_DOT_STYLE", "HOUR_REPEAT"]
+        no_messaging_keys = ["GHCR_PAT", "STARTUP_MESSAGE", "DEFAULT_DOT_STYLE", "MIN_REPEAT"]
         messaging_platforms = list(set(config_json) - set(no_messaging_keys))
         for platform in messaging_platforms:
             if config_json[platform].get("ENABLED", False):
@@ -260,7 +260,7 @@ if __name__ == "__main__":
             f"- startup message: {st_message},\n"
             f"- dot style: {dt_style},\n"
             f"- use GHCR PAT: {pt_ghcr},\n"
-            f"- polling period: {hour_repeat} hours."
+            f"- polling period: {min_repeat} minutes."
         )
         if all(value in globals() for value in ["platform_webhook_url", "platform_header", "platform_pyload", "platform_format_message"]):
             logger.info(f"Initialization complete!")
@@ -276,7 +276,7 @@ if __name__ == "__main__":
 
     
 """Periodically check for changes in Docker monitoring images"""
-@repeat(every(hour_repeat).hours)
+@repeat(every(min_repeat).hours)
 def RepeatCheck():
     watchDigest()
 
