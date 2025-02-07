@@ -276,7 +276,7 @@ if __name__ == "__main__":
 
     
 """Periodically check for changes in Docker monitoring images"""
-@repeat(every(min_repeat).hours)
+@repeat(every(min_repeat).minutes)
 def RepeatCheck():
     watchDigest()
 
