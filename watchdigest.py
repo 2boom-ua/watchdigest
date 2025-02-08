@@ -221,8 +221,8 @@ if __name__ == "__main__":
     if os.path.exists(file_db):
         with open(file_db, "r") as file:
             old_list.extend(file.readlines())
-    dots = {"orange": "\U0001F7E0", "green": "\U0001F7E2", "red": "\U0001F534", "yellow": "\U0001F7E1", "purple": "\U0001F7E3", "brown": "\U0001F7E4"}
-    square_dots = {"orange": "\U0001F7E7", "green": "\U0001F7E9", "red": "\U0001F7E5", "yellow": "\U0001F7E8", "purple": "\U0001F7EA", "brown": "\U0001F7EB"}
+    dots = {"orange": "\U0001F7E0"}
+    square_dots = {"orange": "\U0001F7E7"}
     header_message = f"*{node_name}* (.digest)\n"
     monitoring_message = f"- docker engine: {docker_info['docker_version']},\n"
     if os.path.exists(config_file):
@@ -239,7 +239,7 @@ if __name__ == "__main__":
             logger.error("Error or incorrect settings in config.json. Default settings will be used.")
         if not default_dot_style:
             dots = square_dots
-        orange_dot, green_dot, red_dot, yellow_dot = dots["orange"], dots["green"], dots["red"], dots["yellow"]
+        orange_dot = dots["orange"]
         no_messaging_keys = ["GHCR_PAT", "STARTUP_MESSAGE", "DEFAULT_DOT_STYLE", "MIN_REPEAT"]
         messaging_platforms = list(set(config_json) - set(no_messaging_keys))
         for platform in messaging_platforms:
