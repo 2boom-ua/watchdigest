@@ -235,7 +235,7 @@ if __name__ == "__main__":
             min_repeat = max(int(config_json.get("MIN_REPEAT", 15)), 15)
         except (json.JSONDecodeError, ValueError, TypeError, KeyError):
             startup_message, default_dot_style = True, True
-            min_repeat, ghcr_pat = 2, ""
+            min_repeat, ghcr_pat = 15, ""
             logger.error("Error or incorrect settings in config.json. Default settings will be used.")
         if not default_dot_style:
             dots = square_dots
