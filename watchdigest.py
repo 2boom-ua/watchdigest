@@ -9,6 +9,7 @@ import time
 import requests
 import socket
 import logging
+import platform
 from schedule import every, repeat, run_pending
 from docker.errors import DockerException
 from urllib.parse import urlparse
@@ -23,16 +24,21 @@ logging.basicConfig(
 logger = logging.getLogger("whatchdigest")
 
 
-def getBaseUrl(url):
-    """Get base url"""
+def cutMessageUrl(url):
+    """Cut message url"""
     parsed_url = urlparse(url)
     return f"{parsed_url.scheme}://{parsed_url.netloc}...."
+
+
+def getPlatformBaseUrl() -> str:
+    """Returns the Docker socket path based on the OS."""
+    return 'unix://var/run/docker.sock' if platform.system() == "Linux" else 'npipe:////./pipe/docker_engine'
 
 
 def getDockerInfo() -> dict:
     """Get Docker node name and version."""
     try:
-        docker_client = docker.DockerClient(base_url='unix://var/run/docker.sock')
+        docker_client = docker.DockerClient(base_url=platform_base_url)
         return {
             "node_name": docker_client.info().get("Name", ""),
             "docker_version": docker_client.version().get("Version", "")
@@ -48,9 +54,9 @@ def SendMessage(message: str):
         try:
             response = requests.post(url, json=json_data, data=data, headers=headers)
             response.raise_for_status()
-            logger.info(f"Message successfully sent to {getBaseUrl(url)}. Status code: {response.status_code}")
+            logger.info(f"Message successfully sent to {cutMessageUrl(url)}. Status code: {response.status_code}")
         except requests.exceptions.RequestException as e:
-            logger.error(f"Error sending message to {getBaseUrl(url)}: {e}")
+            logger.error(f"Error sending message to {cutMessageUrl(url)}: {e}")
 
     """"Converts Markdown-like syntax to HTML format."""
     def toHTMLFormat(message: str) -> str:
@@ -213,6 +219,7 @@ def watchDigest():
 
 if __name__ == "__main__":
     """Load configuration and initialize monitoring"""
+    platform_base_url = getPlatformBaseUrl()
     docker_info = getDockerInfo()
     node_name = docker_info["node_name"]
     old_list = []
