@@ -24,6 +24,5 @@
     },
     "STARTUP_MESSAGE": true,
     "DEFAULT_DOT_STYLE": true,
-    "GHCR_PAT": "your_personal_access_token",
-    "MIN_REPEAT": 60
+    "MIN_REPEAT": 45
 }
