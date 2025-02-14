@@ -146,10 +146,7 @@ def getDockerDigest(registry: str, owner: str, image: str, tag: str, ghcr_pat: s
     max_retries, retry_delay = 3, 2
     if registry == "ghcr.io":
         auth_url = f"https://ghcr.io/token?scope=repository:{owner}/{image}:pull"
-        manifest_url = (
-            f"https://api.github.com/users/{owner}/packages/container/{image}/versions"
-            if ghcr_pat else f"https://ghcr.io/v2/{owner}/{image}/manifests/{tag}"
-        )
+        manifest_url = f"https://api.github.com/users/{owner}/packages/container/{image}/versions" if ghcr_pat else f"https://ghcr.io/v2/{owner}/{image}/manifests/{tag}"
     elif registry == "docker.io":
         auth_url = "https://auth.docker.io/token"
         auth_params = {"service": "registry.docker.io", "scope": f"repository:{owner}/{image}:pull"}
@@ -157,6 +154,10 @@ def getDockerDigest(registry: str, owner: str, image: str, tag: str, ghcr_pat: s
     elif registry == "registry.gitlab.com":
         auth_url = f"https://gitlab.com/jwt/auth?service=container_registry&scope=repository:{owner}/{image}:pull"
         manifest_url = f"https://registry.gitlab.com/v2/{owner}/{image}/manifests/{tag}"
+    elif registry == "registry.hub.docker.com":
+        auth_url = "https://auth.docker.io/token"
+        auth_params = {"service": "registry.docker.io", "scope": f"repository:library/{image}:pull"}
+        manifest_url = f"https://registry-1.docker.io/v2/library/{image}/manifests/{tag}"
     else:
         auth_url = f"https://{registry}/v2/token"
         manifest_url = f"https://{registry}/v2/{owner}/{image}/manifests/{tag}"
@@ -164,14 +165,15 @@ def getDockerDigest(registry: str, owner: str, image: str, tag: str, ghcr_pat: s
         if registry == "ghcr.io" and ghcr_pat:
             token = ghcr_pat
         else:
-            response_token = requests.get(auth_url, params=auth_params if registry == "docker.io" else None)
+            response_token = requests.get(auth_url, params=auth_params if registry in ["docker.io", "registry.hub.docker.com"] else None)
+            
             if response_token.status_code == 200:
                 token = response_token.json().get("token", "")
             else:
+                logger.error(f"Auth error ({response_token.status_code}): {response_token.text}")
                 return digest
         headers = {
             "Authorization": f"Bearer {token}",
-            "X-GitHub-Api-Version": "2022-11-28",
             "Accept": ", ".join([
                 "application/vnd.docker.distribution.manifest.v2+json",
                 "application/vnd.docker.distribution.manifest.list.v2+json",
@@ -180,20 +182,24 @@ def getDockerDigest(registry: str, owner: str, image: str, tag: str, ghcr_pat: s
             ])
         }
         for attempt in range(max_retries):
-            response = requests.get(manifest_url, headers=headers) if ghcr_pat and registry == "ghcr.io" else requests.head(manifest_url, headers=headers)
+            response = requests.get(manifest_url, headers=headers) if registry == "ghcr.io" and ghcr_pat else requests.head(manifest_url, headers=headers)
             if response.status_code == 200:
-                if ghcr_pat and registry == "ghcr.io":
+                if registry == "ghcr.io" and ghcr_pat:
                     versions = response.json()
                     for version in versions:
-                        if tag in version.get('metadata', {}).get('container', {}).get('tags', []):
-                            return version['name']
+                        if tag in version.get("metadata", {}).get("container", {}).get("tags", []):
+                            return version["name"]
                 else:
                     return response.headers.get("Docker-Content-Digest", "")
-            if response.status_code == 404:
+            elif response.status_code == 404:
+                logger.error(f"Manifest not found: {manifest_url}")
                 return digest
-            time.sleep(retry_delay)
+            else:
+                logger.warning(f"Attempt {attempt+1}: Received {response.status_code} - {response.text}")
+                time.sleep(retry_delay)
+
     except requests.exceptions.RequestException as e:
-        logger.error(f"Error: {e}")
+        logger.error(f"Request error: {e}")
     return digest
 
 
