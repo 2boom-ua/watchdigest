@@ -81,27 +81,13 @@ You can use any name and any number of records for each messaging platform confi
 ```
     "STARTUP_MESSAGE": true,
     "DEFAULT_DOT_STYLE": true,
-    "GHCR_PAT": "your_personal_access_token",
     "MIN_REPEAT": 60
 ```
 | Item   | Required   | Description   |
 |------------|------------|------------|
 | STARTUP_MESSAGE | true/false | On/Off startup message. | 
 | DEFAULT_DOT_STYLE | true/false | Round/Square dots. |
-| GHCR_PAT | string/empty string | **Optional:** GHCR_PAT (GitHub Container Registry Personal Access Token) is a scoped authentication token used to access GitHub's container registry (ghcr.io).  |
 | MIN_REPEAT | 60 | Set the poll period in minutes. Minimum is 15 minutes. | 
----
-
-#### Generate a Personal Access Token (PAT)
-1. Go to [GitHub Personal Access Tokens](https://github.com/settings/tokens).
-2. Click **"Generate new token (classic)"**.
-3. Set a **name** and **expiration date**.
-4. Select the following **scopes**:
-   - `read:packages` → **Pull images**
-   - `write:packages` → **Push images**
-   - `delete:packages` (optional) → **Delete images**
-   - `repo` (if working with private repositories)
-5. Click **"Generate token"** and **save** it securely.
 ---
 
 ### Clone the repository:
