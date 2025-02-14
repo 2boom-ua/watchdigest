@@ -104,27 +104,39 @@ def getDockerData() -> list:
     """Retrieve detailed data for Docker images"""
     resource_data = []
     try:
-        docker_client = docker.DockerClient(base_url='unix://var/run/docker.sock', version='auto')
+        docker_client = docker.DockerClient(base_url="unix://var/run/docker.sock", version="auto")
         images = docker_client.images.list()
-        if images:
-            for image in images:
-                if not image.tags or ":" not in image.tags[0]:
-                    continue
-                image_full, image_tag = image.tags[0].split(':', 1)
-                parts = image_full.split('/')
-                if len(parts) == 3:
-                    image_source, image_owner, image_name = parts
-                elif len(parts) == 2:
-                    image_source = "docker.io"
-                    image_owner, image_name = parts
-                elif len(parts) == 1:
-                    image_source, image_owner, image_name = "local", "dockerfile", image_full
-                else:
-                    image_source, image_owner, image_name = "docker.io", "library", parts[0]
-                digest = image.attrs["RepoDigests"][0].split("@")[1] if image.attrs.get("RepoDigests") else "NoDigest"
-                resource_data.append(f"{digest} {image_source} {image_owner} {image_name} {image_tag}")
-    except (docker.errors.DockerException, Exception) as e:
-        logger.error(f"Error: {e}")
+        for image in images:
+            if not image.tags:
+                continue
+            image_source = image_owner = image_name = image_tag = ""
+            fullname, image_tag = image.tags[0].rsplit(":", 1) if ":" in image.tags[0] else (image.tags[0], "latest")
+            parts = fullname.split("/")
+            if fullname.startswith(("ghcr.io", "registry.gitlab.com")):
+                image_source = parts[0]
+                image_owner = parts[1]
+                image_name = "/".join(parts[2:]) if len(parts) > 2 else parts[1]
+            elif fullname.startswith("registry.") and not fullname.startswith("registry.gitlab.com"):
+                image_source = parts[0]
+                image_owner = parts[1]
+                image_name = "/".join(parts[2:]) if len(parts) > 2 else parts[1]
+            elif parts[0] in ["library", "postgres"]:
+                image_source = "registry.hub.docker.com"
+                image_owner, image_name = parts if len(parts) > 1 else ("library", parts[0])
+            elif len(parts) == 2:
+                image_source = "docker.io"
+                image_owner, image_name = parts
+            else:
+                image_source = "local"
+                image_owner = "local"
+                image_name = fullname
+            repo_digests = image.attrs.get("RepoDigests", [])
+            digest = repo_digests[0].split("@")[1] if repo_digests else "NoDigest"
+            resource_data.append(f"{digest} {image_source} {image_owner} {image_name} {image_tag}")
+    except docker.errors.DockerException as e:
+        logger.error(f"Docker error: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
     return resource_data
 
 
