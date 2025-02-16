@@ -54,7 +54,6 @@ def SendMessage(message: str):
         try:
             response = requests.post(url, json=json_data, data=data, headers=headers)
             response.raise_for_status()
-            logger.info(f"Message successfully sent to {cutMessageUrl(url)}. Status code: {response.status_code}")
         except requests.exceptions.RequestException as e:
             logger.error(f"Error sending message to {cutMessageUrl(url)}: {e}")
 
@@ -82,7 +81,6 @@ def SendMessage(message: str):
         data, ntfy = None, False
         formated_message = toMarkdownFormat(message, format_message)
         header_json = header if header else None
-        
         for key in list(pyload.keys()):
             if key == "title":
                 delimiter = "<br>" if format_message == "html" else "\n"
@@ -172,7 +170,6 @@ def getDockerDigest(registry: str, owner: str, image: str, tag: str) -> str:
         }
         for attempt in range(max_retries):
             response = requests.get(manifest_url, headers=headers)
-            
             if response.status_code == 200:
                 digest = response.headers.get("Docker-Content-Digest", "")
                 if digest:
@@ -199,7 +196,6 @@ def watchDigest():
     """Checks for outdated Docker images by comparing local digests with remote ones."""
     global old_list
     new_list = result = []
-    current_time = datetime.now()
     count_all = count_with_digest = 0
     for dockerdata in getDockerData():
         local_digest, source, owner, image, tag = dockerdata.split()
@@ -223,8 +219,7 @@ def watchDigest():
         logger.info(f"{''.join(result).replace(orange_dot, '').replace('*', '').strip()}")
     logger.info("Process complete!")
     logger.info(f"{count_all} local digests tracked, {count_with_digest} completed.")
-    new_time = current_time + timedelta(minutes=min_repeat)
-    logger.info(f"Scheduled next run: {new_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info(f"Scheduled next run: {(datetime.now() + timedelta(minutes=min_repeat)).strftime('%Y-%m-%d %H:%M:%S')}")
 
 
 if __name__ == "__main__":
