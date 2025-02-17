@@ -207,7 +207,7 @@ def watchDigest():
         if digest:
             count_with_digest += 1
         if digest and digest != local_digest:
-            new_list.append(f"{orange_dot} *{owner}/{image}*: outdated!\n")
+            new_list.append(f"{orange_dot} *{owner}/{image}:{tag}* outdated!\n")
         count_all += 1
     if new_list:
         if len(new_list) >= len(old_list):
