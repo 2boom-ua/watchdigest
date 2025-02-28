@@ -53,7 +53,7 @@ def SendMessage(message: str):
     """Internal function to send HTTP POST requests with error handling"""
     def SendRequest(url, json_data=None, data=None, headers=None):
         try:
-            response = requests.post(url, json=json_data, data=data, headers=headers)
+            response = requests.post(url, json=json_data, data=data, headers=headers, timeout=(5, 10))
             response.raise_for_status()
         except requests.exceptions.RequestException as e:
             logger.error(f"Error sending message to {cutMessageUrl(url)}: {e}")
