@@ -10,6 +10,7 @@ import time
 import requests
 import socket
 import logging
+import random
 import platform
 from schedule import every, repeat, run_pending
 from docker.errors import DockerException
@@ -51,14 +52,24 @@ def getDockerInfo() -> dict:
 
 def SendMessage(message: str):
     """Internal function to send HTTP POST requests with error handling"""
-    def SendRequest(url, json_data=None, data=None, headers=None):
-        try:
-            response = requests.post(url, json=json_data, data=data, headers=headers, timeout=(5, 10))
-            response.raise_for_status()
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Error sending message to {cutMessageUrl(url)}: {e}")
 
-    """"Converts Markdown-like syntax to HTML format."""
+    def SendRequest(url, json_data=None, data=None, headers=None):
+        max_attempts = 5
+        for attempt in range(max_attempts):
+            try:
+                response = requests.post(url, json=json_data, data=data, headers=headers, timeout=(5, 20))
+                response.raise_for_status()
+                return
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Attempt {attempt + 1}/{max_attempts} - Error sending message to {cutMessageUrl(url)}: {e}")
+                if attempt == max_attempts - 1:
+                    logger.error(f"Failed to send message to {cutMessageUrl(url)} after {max_attempts} attempts")
+                else:
+                    backoff_time = (2 ** attempt) + random.uniform(0, 1)
+                    logger.warning(f"Retrying in {backoff_time:.2f} seconds...")
+                    time.sleep(backoff_time)
+
+    """Converts Markdown-like syntax to HTML format."""
     def toHTMLFormat(message: str) -> str:
         message = ''.join(f"<b>{part}</b>" if i % 2 else part for i, part in enumerate(message.split('*')))
         return message.replace("\n", "<br>")
