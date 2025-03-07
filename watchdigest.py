@@ -115,7 +115,7 @@ def getDockerData() -> list:
     resource_data = []
     try:
         docker_client = docker.DockerClient(base_url="unix://var/run/docker.sock", version="auto")
-        images = docker_client.images.list()
+        images = docker_client.images.list(filters={'dangling': False})
         for image in images:
             if not image.tags:
                 continue
