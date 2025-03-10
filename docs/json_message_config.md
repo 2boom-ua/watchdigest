@@ -9,7 +9,7 @@
         "HEADER": [
             {"Content-Type": "application/json"}
         ],
-        "PYLOAD": [
+        "PAYLOAD": [
             {"chat_id": "{CHAT_ID}", "text": "message", "parse_mode": "Markdown"}
         ],
         "FORMAT_MESSAGE": [
@@ -35,7 +35,7 @@
         "HEADER": [
             {"Content-Type": "application/json"}
         ],
-        "PYLOAD": [
+        "PAYLOAD": [
             {"msgtype": "m.text", "body": "message", "format": "org.matrix.custom.html", "formatted_body": "message"}
         ],
         "FORMAT_MESSAGE": [
@@ -62,7 +62,7 @@
         "HEADER": [
             {"Content-Type": "application/json"}
         ],
-        "PYLOAD": [
+        "PAYLOAD": [
             {"body": "message", "type": "info", "format": "markdown"}
         ],
         "FORMAT_MESSAGE": [
@@ -87,7 +87,7 @@
         "HEADER": [
             {"Content-Type": "text/markdown"}
         ],
-        "PYLOAD": [
+        "PAYLOAD": [
             {"data": "message"}
         ],
         "FORMAT_MESSAGE": [
@@ -113,7 +113,7 @@
         "HEADER": [
             {"Content-Type": "application/json"}
         ],
-        "PYLOAD": [
+        "PAYLOAD": [
             {"text": "message"}
         ],
         "FORMAT_MESSAGE": [
@@ -138,7 +138,7 @@
         "HEADER": [
             {"Content-Type": "application/json"}
         ],
-        "PYLOAD": [
+        "PAYLOAD": [
             {"text": "message"}
         ],
         "FORMAT_MESSAGE": [
@@ -163,7 +163,7 @@
         "HEADER": [
             {"Content-Type": "application/json"}
         ],
-        "PYLOAD": [
+        "PAYLOAD": [
             {"text": "message"}
         ],
         "FORMAT_MESSAGE": [
@@ -189,7 +189,7 @@
         "HEADER": [
             {"Content-Type": "application/json"}
         ],
-        "PYLOAD": [
+        "PAYLOAD": [
             {"text": "message"}
         ],
         "FORMAT_MESSAGE": [
@@ -214,7 +214,7 @@
         "HEADER": [
             {"Content-Type": "application/json"}
         ],
-        "PYLOAD": [
+        "PAYLOAD": [
             {"text": "message", "mrkdwn": "True"}
         ],
         "FORMAT_MESSAGE": [
@@ -238,7 +238,7 @@
         "HEADER": [
             {"Content-Type": "application/json"}
         ],
-        "PYLOAD": [
+        "PAYLOAD": [
             {"text": "message"}
         ],
         "FORMAT_MESSAGE": [
@@ -262,7 +262,7 @@
         "HEADER": [
             {"Content-Type": "application/json"}
         ],
-        "PYLOAD": [
+        "PAYLOAD": [
             {"title": "title", "message": "message", "priority": 0, "extras": {"client::display": {"contentType": "text/markdown"}}}
         ],
         "FORMAT_MESSAGE": [
@@ -287,7 +287,7 @@
         "HEADER": [
             {"Content-type": "application/json"}
         ],
-        "PYLOAD": [
+        "PAYLOAD": [
             {"token": "{TOKEN}", "user": "{USER_KEY}", "title": "header", "message": "message", "html": "1"}
         ],
         "FORMAT_MESSAGE": [
@@ -312,7 +312,7 @@
         "HEADER": [
             {"Content-Type": "application/json", "Access-Token": "{TOKEN}"}
         ],
-        "PYLOAD": [
+        "PAYLOAD": [
             {"type": "note", "title": "header", "body": "message"}
         ],
         "FORMAT_MESSAGE": [
@@ -337,7 +337,7 @@
         "HEADER": [
             {"Content-Type": "application/json"}
         ],
-        "PYLOAD": [
+        "PAYLOAD": [
             {"message": "message"}
         ],
         "FORMAT_MESSAGE": [
