@@ -11,7 +11,7 @@
             {"second JSON structure"},
             "...."
         ],
-        "PYLOAD": [
+        "PAYLOAD": [
             {"first JSON structure"},
             {"second JSON structure"},
             "...."
