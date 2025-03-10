@@ -53,7 +53,7 @@ You can use any name and any number of records for each messaging platform confi
             {second JSON structure},
             {....}
         ],
-        "PYLOAD": [
+        "PAYLOAD": [
             {first JSON structure},
             {second JSON structure},
             {....}
