@@ -75,17 +75,17 @@ def SendMessage(message: str):
         return message.replace("\n", "<br>")
 
     """Converts the message to the specified format (HTML, Markdown, or plain text)"""
-    def toMarkdownFormat(message: str, m_format: str) -> str:
-        if m_format == "html":
+    def toMarkdownFormat(message: str, markdown_type: str) -> str:
+        if markdown_type == "html":
             return toHTMLFormat(message)
-        elif m_format == "markdown":
+        elif markdown_type == "markdown":
             return message.replace("*", "**")
-        elif m_format == "text":
+        elif markdown_type == "text":
             return message.replace("*", "")
-        elif m_format == "simplified":
+        elif markdown_type == "simplified":
             return message
         else:
-            logger.error(f"Unknown format '{m_format}' provided. Returning original message.")
+            logger.error(f"Unknown format '{markdown_type}' provided. Returning original message.")
             return message
 
     """Iterate through multiple platform configurations"""
