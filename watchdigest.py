@@ -217,6 +217,7 @@ def watchDigest():
     """Checks for outdated Docker images by comparing local digests with remote ones."""
     global old_list
     new_list = result = []
+    time_start = datetime.now()
     count_all = count_with_digest = 0
     for dockerdata in getDockerData():
         local_digest, source, owner, image, tag = dockerdata.split()
@@ -238,9 +239,12 @@ def watchDigest():
     if result:
         SendMessage(f"{header_message}{''.join(result)}")
         logger.info(f"{''.join(result).replace(orange_dot, '').replace('*', '').strip()}")
-    logger.info("Process complete!")
+    time_end = datetime.now()
+    elapsed = time_end - time_start
+    minutes, seconds = divmod(elapsed.total_seconds(), 60)
+    logger.info(f"Process complete! Execution time: {int(minutes):02d}:{int(seconds):02d}")
     logger.info(f"{count_all} local digests tracked, {count_with_digest} completed.")
-    logger.info(f"Scheduled next run: {(datetime.now() + timedelta(minutes=min_repeat)).strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info(f"Scheduled next run: {(time_end + timedelta(minutes=min_repeat)).strftime('%Y-%m-%d %H:%M:%S')}")
 
 
 if __name__ == "__main__":
