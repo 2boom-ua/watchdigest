@@ -236,14 +236,14 @@ def watchDigest():
     old_list = new_list
     with open(file_db, "w") as file:
         file.writelines(old_list)
-    if result:
-        SendMessage(f"{header_message}{''.join(result)}")
-        logger.info(f"{''.join(result).replace(orange_dot, '').replace('*', '').strip()}")
     time_end = datetime.now()
     elapsed = time_end - time_start
     minutes, seconds = divmod(elapsed.total_seconds(), 60)
     logger.info(f"Process complete! Execution time: {int(minutes):02d}:{int(seconds):02d}")
     logger.info(f"{count_all} local digests tracked, {count_with_digest} completed.")
+    if result:
+        SendMessage(f"{header_message}{''.join(result)}")
+        logger.info(f"{''.join(result).replace(orange_dot, '').replace('*', '').strip()}")
     logger.info(f"Scheduled next run: {(time_end + timedelta(minutes=min_repeat)).strftime('%Y-%m-%d %H:%M:%S')}")
 
 
