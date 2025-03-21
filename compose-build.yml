@@ -6,6 +6,8 @@ services:
       dockerfile: Dockerfile
     container_name: watchdigest
     image: watchdigest:latest
+    ports:
+      - 5151:5151
     volumes:
       - ./config.json:/watchdigest/config.json
       - ./data.db:/watchdigest/data.db
