@@ -113,7 +113,7 @@ curl -L -o ./config.json  https://raw.githubusercontent.com/2boom-ua/watchdigest
 ```
 ### docker-cli
 ```bash
-docker run -v ./config.json:/watchdigest/config.json -v /var/run/docker.sock:/var/run/docker.sock --name watchdigest -e TZ=UTC ghcr.io/2boom-ua/watchdigest:latest 
+docker run --name watchdigest -p 5151:5151 -v ./config.json:/watchdigest/config.json -v ./data.db:/watchdigest/data.db -v /var/run/docker.sock:/var/run/docker.sock -e TZ=Etc/UTC --restart always ghcr.io/2boom-ua/watchdigest:latest 
 ```
 ### docker-compose
 ```
