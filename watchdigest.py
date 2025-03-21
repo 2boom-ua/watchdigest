@@ -276,23 +276,27 @@ def watchDigest():
             if digest:
                 count_with_digest += 1
             for item in docker_image_data:
-                if item["image"] == full_image:
-                    if digest and digest != local_digest:
-                        item["status"] = "outdated"
-                        new_list.append(f"{orange_dot} *{owner}/{image}:{tag}* outdated!\n")
-                    elif digest:
-                        item["status"] = "uptodate"
-                    else:
-                        item["status"] = "error"
+                if item["image"] != full_image:
+                    continue
+
+                if digest and digest != local_digest:
+                    item["status"] = "outdated"
+                    new_list.append(f"{orange_dot} *{owner}/{image}:{tag}* outdated!\n")
+                elif digest:
+                    item["status"] = "uptodate"
+                else:
+                    item["status"] = "error"
         else:
             for item in docker_image_data:
-                if item["image"] == full_image:
-                    if local_digest == "NoDigest":
-                        item["status"] = "nodigest"
-                    elif source.startswith("local") and local_digest != "NoDigest":
-                        item["status"] = "uptodate"
-                    else:
-                        item["status"] = "error"
+                if item["image"] != full_image:
+                    continue
+            
+                if local_digest == "NoDigest":
+                    item["status"] = "nodigest"
+                elif source.startswith("local"):
+                    item["status"] = "uptodate"
+                else:
+                    item["status"] = "error"
         count_all += 1
     if new_list:
         if len(new_list) >= len(old_list):
