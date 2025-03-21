@@ -122,6 +122,8 @@ services:
   watchdigest:
     image: ghcr.io/2boom-ua/watchdigest:latest
     container_name: watchdigest
+    ports:
+      - 5151:5151
     volumes:
       - ./config.json:/watchdigest/config.json
       - ./data.db:/watchdigest/data.db
@@ -175,6 +177,9 @@ systemctl enable watchdigest.service
 ```
 systemctl start watchdigest.service
 ```
+### View
+
+**https://your_domain_name or http://server_ip:5151**
 
 ### License
 
