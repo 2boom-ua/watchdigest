@@ -287,7 +287,12 @@ def watchDigest():
         else:
             for item in docker_image_data:
                 if item["image"] == full_image:
-                    item["status"] = "nodigest" if local_digest == "NoDigest" else "error"
+                    if local_digest == "NoDigest":
+                        item["status"] = "nodigest"
+                    elif source.startswith("local") and local_digest != "NoDigest":
+                        item["status"] = "uptodate"
+                    else:
+                        item["status"] = "error"
         count_all += 1
     if new_list:
         if len(new_list) >= len(old_list):
