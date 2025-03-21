@@ -1,0 +1,17 @@
+nano /etc/systemd/system/watchdigest.service
+
+[Unit]
+Description=check docker update status
+After=multi-user.target
+
+[Service]
+Type=simple
+Restart=always
+ExecStart=/usr/bin/python3 /opt/watchdigest/watchdigest.py
+
+[Install]
+WantedBy=multi-user.target
+
+systemctl daemon-reload
+systemctl enable watchdigest.service
+systemctl restart watchdigest.service

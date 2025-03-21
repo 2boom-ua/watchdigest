@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-#Copyright (c) 2025 2boom.
+# Copyright (c) 2025 2boom.
 
 import json
 import docker
@@ -12,10 +12,12 @@ import socket
 import logging
 import random
 import platform
+import threading
 from schedule import every, repeat, run_pending
 from docker.errors import DockerException
 from urllib.parse import urlparse
 from datetime import datetime, timedelta
+from flask import Flask, render_template, jsonify, request
 
 
 """Configure logging"""
@@ -25,34 +27,39 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+app = Flask(__name__)
+
+docker_image_data = []
+next_run_time = "Not yet scheduled"
+last_checked_time = "Not yet checked"
+
 
 def cutMessageUrl(url):
-    """Cut message url"""
+    """Truncate URL for logging brevity."""
     parsed_url = urlparse(url)
     return f"{parsed_url.scheme}://{parsed_url.netloc}...."
 
 
 def getPlatformBaseUrl() -> str:
-    """Returns the Docker socket path based on the OS."""
+    """Return Docker socket path based on OS."""
     return 'unix://var/run/docker.sock' if platform.system() == "Linux" else 'npipe:////./pipe/docker_engine'
 
 
 def getDockerInfo() -> dict:
-    """Get Docker node name and version."""
+    """Fetch Docker node name and version."""
     try:
         docker_client = docker.DockerClient(base_url=platform_base_url)
         return {
             "docker_engine_name": docker_client.info().get("Name", ""),
             "docker_version": docker_client.version().get("Version", "")
         }
-    except (docker.errors.DockerException, Exception) as e:
-        logger.error(f"Error: {e}")
+    except (DockerException, Exception) as e:
+        logger.error(f"Error fetching Docker info: {e}")
         return {"docker_engine_name": "", "docker_version": ""}
 
 
 def SendMessage(message: str):
-    """Internal function to send HTTP POST requests with error handling"""
-
+    """Send HTTP POST requests with retry logic."""
     def SendRequest(url, json_data=None, data=None, headers=None):
         max_attempts = 5
         for attempt in range(max_attempts):
@@ -61,21 +68,21 @@ def SendMessage(message: str):
                 response.raise_for_status()
                 return
             except requests.exceptions.RequestException as e:
-                logger.error(f"Attempt {attempt + 1}/{max_attempts} - Error sending message to {cutMessageUrl(url)}: {e}")
+                logger.error(f"Attempt {attempt + 1}/{max_attempts} - Error sending to {cutMessageUrl(url)}: {e}")
                 if attempt == max_attempts - 1:
-                    logger.error(f"Failed to send message to {cutMessageUrl(url)} after {max_attempts} attempts")
+                    logger.error(f"Failed to send to {cutMessageUrl(url)} after {max_attempts} attempts")
                 else:
                     backoff_time = (2 ** attempt) + random.uniform(0, 1)
                     logger.warning(f"Retrying in {backoff_time:.2f} seconds...")
                     time.sleep(backoff_time)
 
-    """Converts Markdown-like syntax to HTML format."""
     def toHTMLFormat(message: str) -> str:
+        """Convert message to HTML bold format."""
         message = ''.join(f"<b>{part}</b>" if i % 2 else part for i, part in enumerate(message.split('*')))
         return message.replace("\n", "<br>")
 
-    """Converts the message to the specified format (HTML, Markdown, or plain text)"""
     def toMarkdownFormat(message: str, markdown_type: str) -> str:
+        """Format message based on specified type."""
         if markdown_type == "html":
             return toHTMLFormat(message)
         elif markdown_type == "markdown":
@@ -85,44 +92,47 @@ def SendMessage(message: str):
         elif markdown_type == "simplified":
             return message
         else:
-            logger.error(f"Unknown format '{markdown_type}' provided. Returning original message.")
+            logger.error(f"Unknown format '{markdown_type}'. Returning original message.")
             return message
 
-    """Iterate through multiple platform configurations"""
     for url, header, payload, format_message in zip(platform_webhook_url, platform_header, platform_payload, platform_format_message):
         data, ntfy = None, False
-        formated_message = toMarkdownFormat(message, format_message)
+        formatted_message = toMarkdownFormat(message, format_message)
         header_json = header if header else None
         for key in list(payload.keys()):
             if key == "title":
                 delimiter = "<br>" if format_message == "html" else "\n"
-                header, formated_message = formated_message.split(delimiter, 1)
+                header, formatted_message = formatted_message.split(delimiter, 1)
                 payload[key] = header.replace("*", "")
             elif key == "extras":
-                formated_message = formated_message.replace("\n", "\n\n")
-                payload["message"] = formated_message
+                formatted_message = formatted_message.replace("\n", "\n\n")
+                payload["message"] = formatted_message
             elif key == "data":
                 ntfy = True
-            payload[key] = formated_message if key in ["text", "content", "message", "body", "formatted_body", "data"] else payload[key]
+            payload[key] = formatted_message if key in ["text", "content", "message", "body", "formatted_body", "data"] else payload[key]
         payload_json = None if ntfy else payload
-        data = formated_message.encode("utf-8") if ntfy else None
-        """Send the request with the appropriate payload and headers"""
+        data = formatted_message.encode("utf-8") if ntfy else None
         SendRequest(url, payload_json, data, header_json)
 
 
 def getDockerData() -> list:
-    """Retrieve detailed data for Docker images"""
+    """Retrieve Docker image data including container name, size, and formatted creation date."""
+    global docker_image_data
     resource_data = []
     try:
         docker_client = docker.DockerClient(base_url=platform_base_url, version="auto")
         images = docker_client.images.list(filters={'dangling': False})
         all_containers = docker_client.containers.list(all=True)
-        used_image_ids = set()
+        used_image_ids = {}
         for container in all_containers:
             image_id = container.attrs['Image']
             if image_id.startswith('sha256:'):
                 image_id = image_id[7:]
-            used_image_ids.add(image_id)
+            container_name = container.attrs['Name'].lstrip('/')
+            if image_id in used_image_ids:
+                used_image_ids[image_id].append(container_name)
+            else:
+                used_image_ids[image_id] = [container_name]
         for image in images:
             if not image.tags:
                 continue
@@ -151,14 +161,50 @@ def getDockerData() -> list:
                     image_name = fullname
                 repo_digests = image.attrs.get("RepoDigests", [])
                 digest = repo_digests[0].split("@")[1] if repo_digests else "NoDigest"
-                resource_data.append(f"{digest} {image_source} {image_owner} {image_name} {image_tag}")
-    except (docker.errors.DockerException, Exception) as e:
-        logger.error(f"Error: {e}")
+                size_mb = image.attrs.get("Size", 0) / (1024 * 1024)
+                created_raw = image.attrs.get("Created", None)
+                logger.debug(f"Raw Created value for {fullname}:{image_tag}: {created_raw}")
+                if created_raw:
+                    try:
+                        if '.' in created_raw:
+                            base, frac = created_raw.split('.')
+                            frac = frac.rstrip('Z')
+                            frac = frac[:6] + 'Z' if frac else '000000Z'
+                            created_raw_truncated = f"{base}.{frac}"
+                        else:
+                            created_raw_truncated = created_raw
+                        created_dt = datetime.strptime(created_raw_truncated, "%Y-%m-%dT%H:%M:%S.%fZ")
+                        created = created_dt.strftime("%Y-%m-%d %H:%M:%S")
+                    except ValueError:
+                        try:
+                            created_dt = datetime.strptime(created_raw, "%Y-%m-%dT%H:%M:%SZ")
+                            created = created_dt.strftime("%Y-%m-%d %H:%M:%S")
+                        except ValueError:
+                            logger.error(f"Failed to parse Created timestamp: {created_raw}")
+                            created = "Unknown"
+                    except Exception as e:
+                        logger.error(f"Unexpected error parsing timestamp: {e}")
+                        created = "Unknown"
+                else:
+                    logger.warning(f"No Created timestamp found for {fullname}:{image_tag}")
+                    created = "Unknown"
+                container_names = ", ".join(used_image_ids[short_id])
+                resource_data.append({
+                    "container_name": container_names,
+                    "digest": digest,
+                    "image": f"{image_source}/{image_owner}/{image_name}:{image_tag}",
+                    "size": f"{size_mb:.2f} MB",
+                    "status": "unknown",
+                    "created": created
+                })
+        docker_image_data = resource_data
+    except (DockerException, Exception) as e:
+        logger.error(f"Error retrieving Docker data: {e}")
     return resource_data
 
 
 def getDockerDigest(registry: str, owner: str, image: str, tag: str) -> str:
-    """Retrieves the latest digest for a Docker image from GHCR, Docker Hub, GitLab, or a custom registry."""
+    """Retrieve the latest digest for a Docker image from a registry."""
     digest = ""
     max_retries, retry_delay = 3, 2
     if registry == "ghcr.io":
@@ -214,21 +260,34 @@ def getDockerDigest(registry: str, owner: str, image: str, tag: str) -> str:
 
 
 def watchDigest():
-    """Checks for outdated Docker images by comparing local digests with remote ones."""
-    global old_list
+    """Check for outdated Docker images by comparing local and remote digests."""
+    global old_list, docker_image_data, next_run_time, last_checked_time
     new_list = result = []
     time_start = datetime.now()
     count_all = count_with_digest = 0
-    for dockerdata in getDockerData():
-        local_digest, source, owner, image, tag = dockerdata.split()
+    for data in getDockerData():
+        local_digest = data["digest"]
+        full_image = data["image"]
+        source, rest = full_image.split("/", 1)
+        owner_image, tag = rest.rsplit(":", 1)
+        owner, image = owner_image.split("/", 1) if "/" in owner_image else ("library", owner_image)
         if source.startswith(("docker.io", "ghcr.io", "registry.gitlab.com", "registry.")):
             digest = getDockerDigest(source, owner, image, tag)
+            if digest:
+                count_with_digest += 1
+            for item in docker_image_data:
+                if item["image"] == full_image:
+                    if digest and digest != local_digest:
+                        item["status"] = "outdated"
+                        new_list.append(f"{orange_dot} *{owner}/{image}:{tag}* outdated!\n")
+                    elif digest:
+                        item["status"] = "uptodate"
+                    else:
+                        item["status"] = "error"
         else:
-            continue
-        if digest:
-            count_with_digest += 1
-        if digest and digest != local_digest:
-            new_list.append(f"{orange_dot} *{owner}/{image}:{tag}* outdated!\n")
+            for item in docker_image_data:
+                if item["image"] == full_image:
+                    item["status"] = "nodigest" if local_digest == "NoDigest" else "error"
         count_all += 1
     if new_list:
         if len(new_list) >= len(old_list):
@@ -244,24 +303,60 @@ def watchDigest():
     if result:
         SendMessage(f"{header_message}{''.join(result)}")
         logger.info(f"{''.join(result).replace(orange_dot, '').replace('*', '').strip()}")
-    logger.info(f"Scheduled next run: {(time_end + timedelta(minutes=min_repeat)).strftime('%Y-%m-%d %H:%M:%S')}")
+    last_checked_time = time_end.strftime('%Y-%m-%d %H:%M:%S')
+    next_run_time = (time_end + timedelta(minutes=min_repeat)).strftime('%Y-%m-%d %H:%M:%S')
+    logger.info(f"Next run: {next_run_time}")
+
+
+@app.route('/')
+def display_docker_data():
+    """Display Docker image data with last checked and scheduled next run times."""
+    global docker_image_data, dots, next_run_time, last_checked_time
+    return render_template(
+        'index.html',
+        data=docker_image_data,
+        orange_dot=dots["orange"],
+        green_dot=dots["green"],
+        red_dot=dots["red"],
+        yellow_dot=dots["yellow"],
+        next_run=next_run_time,
+        last_checked=last_checked_time
+    )
+
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    try:
+        logger.debug("Health check endpoint called")
+        return jsonify({"status": "healthy"}), 200
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+def run_flask():
+    """Run Flask app in a separate thread."""
+    app.run(host='0.0.0.0', port=5151, debug=False, use_reloader=False)
 
 
 if __name__ == "__main__":
-    """Load configuration and initialize monitoring"""
+    """Initialize and start monitoring."""
     platform_base_url = getPlatformBaseUrl()
     docker_info = getDockerInfo()
     node_name = docker_info["docker_engine_name"]
     old_list = []
     config_file = os.path.join(os.path.dirname(os.path.realpath(__file__)), "config.json")
     file_db = os.path.join(os.path.dirname(os.path.realpath(__file__)), "data.db")
+    
     if os.path.exists(file_db):
         with open(file_db, "r") as file:
-            old_list.extend(file.readlines())
-    dots = {"orange": "\U0001F7E0"}
-    square_dots = {"orange": "\U0001F7E7"}
+            old_list = file.readlines()
+    
+    dots = {"orange": "\U0001F7E0", "green": "\U0001F7E2", "red": "\U0001F534", "yellow": "\U0001F7E1"}
+    square_dots = {"orange": "\U0001F7E7", "green": "\U0001F7E9", "red": "\U0001F7E5", "yellow": "\U0001F7E8"}
     header_message = f"*{node_name}* (.digest)\n"
     monitoring_message = f"- docker engine: {docker_info['docker_version']},\n"
+    
     if os.path.exists(config_file):
         with open(config_file, "r") as file:
             config_json = json.loads(file.read())
@@ -272,7 +367,7 @@ if __name__ == "__main__":
         except (json.JSONDecodeError, ValueError, TypeError, KeyError):
             startup_message, default_dot_style = True, True
             min_repeat = 15
-            logger.error("Error or incorrect settings in config.json. Default settings will be used.")
+            logger.error("Error or incorrect settings in config.json. Using defaults.")
         if not default_dot_style:
             dots = square_dots
         orange_dot = dots["orange"]
@@ -297,23 +392,26 @@ if __name__ == "__main__":
             f"- polling period: {min_repeat} minutes."
         )
         if all(value in globals() for value in ["platform_webhook_url", "platform_header", "platform_payload", "platform_format_message"]):
-            logger.info(f"Initialization complete!")
+            logger.info("Initialization complete!")
             if startup_message:
                 SendMessage(f"{header_message}{monitoring_message}")
-            watchDigest()
         else:
-            logger.error("config.json is wrong")
+            logger.error("Invalid config.json")
             sys.exit(1)
     else:
         logger.error("config.json not found")
         sys.exit(1)
 
-    
-"""Periodically check for changes in Docker monitoring images"""
-@repeat(every(min_repeat).minutes)
-def RepeatCheck():
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    logger.info("Flask web server started at http://0.0.0.0:5151")
+
     watchDigest()
 
-while True:
-    run_pending()
-    time.sleep(1)
+    @repeat(every(min_repeat).minutes)
+    def RepeatCheck():
+        watchDigest()
+
+    while True:
+        run_pending()
+        time.sleep(1)

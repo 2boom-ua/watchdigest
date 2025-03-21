@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="msapplication-TileImage" content="{{ url_for('static', filename='mstile-144x144.png') }}">
+    <title>Watchdigest</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='main.css') }}"/>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}"/>
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
+</head>
+<body>
+    <h1>Last checked: {{ last_checked }} | Next run: {{ next_run }}</h1>
+    <table id="dockerTable">
+        <thead>
+            <tr>
+                <th>Container Name</th>
+                <th>Digest</th>
+                <th>Status</th>
+                <th>Image</th>
+                <th>Size</th>
+                <th>Created</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in data %}
+                <tr>
+                    <td data-label="Container Name">{{ item.container_name }}</td>
+                    <td data-label="Digest"><span class="truncate-digest">{{ item.digest }}</span></td>
+                    <td data-label="Status">
+                        {% if item.status == "outdated" %}
+                            <span style="color: var(--warning); border-color: var(--warning);" title="Outdated">{{ orange_dot }}</span>
+                        {% elif item.status == "uptodate" %}
+                            <span style="color: var(--success); border-color: var(--success);" title="Updated">{{ green_dot }}</span>
+                        {% elif item.status == "error" %}
+                            <span style="color: var(--error); border-color: var(--error);" title="Error">{{ red_dot }}</span>
+                        {% elif item.status == "nodigest" %}
+                            <span style="color: var(--secondary); border-color: var(--secondary);" title="No Digest">{{ yellow_dot }}</span>
+                        {% else %}
+                            <span title="Unknown">?</span>
+                        {% endif %}
+                    </td>
+                    <td data-label="Image"><span class="truncate-image">{{ item.image }}</span></td>
+                    <td data-label="Size">{{ item.size }}</td>
+                    <td data-label="Created">{{ item.created }}</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <div class="footer">Watchdigest, © 2boom, 2025</div>
+    <script>
+        setInterval(function() {
+            fetch('/')
+                .then(response => response.text())
+                .then(html => {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(html, 'text/html');
+                    document.querySelector('#dockerTable').outerHTML = doc.querySelector('#dockerTable').outerHTML;
+                    document.querySelector('h1').outerHTML = doc.querySelector('h1').outerHTML;
+                })
+                .catch(error => console.error('Error refreshing page:', error));
+        }, 30000);
+    </script>
+</body>
+</html>
