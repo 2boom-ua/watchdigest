@@ -1,3 +1,7 @@
+<div align="center">  
+    <img src="https://github.com/2boom-ua/watchdigets/blob/main/static/mstile-144x144.png?raw=true" alt="" width="124" height="124">
+</div>
+
 ## Docker monitoring tool that tracks Docker image updates
 
 WatchDigest is a monitoring tool that tracks Docker image updates by comparing local digests with remote registries (Docker Hub, GitHub Container Registry, GitLab and others). It periodically checks for outdated images and sends notifications via webhooks. 
