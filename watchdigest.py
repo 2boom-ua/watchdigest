@@ -27,6 +27,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+werkzeug_logger = logging.getLogger('werkzeug')
+werkzeug_logger.disabled = True
+
 app = Flask(__name__)
 
 docker_image_data = []
