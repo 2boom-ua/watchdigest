@@ -13,6 +13,7 @@ import logging
 import random
 import platform
 import threading
+from typing import List
 from schedule import every, repeat, run_pending
 from docker.errors import DockerException
 from urllib.parse import urlparse
@@ -31,10 +32,12 @@ werkzeug_logger = logging.getLogger('werkzeug')
 werkzeug_logger.disabled = True
 
 app = Flask(__name__)
+app.logger.disabled = True
 
-docker_image_data = []
-next_run_time = "Not yet scheduled"
-last_checked_time = "Not yet checked"
+docker_image_data = old_docker_image_data = []
+
+next_run_time = "Unscheduled"
+last_checked_time = "Checking"
 
 
 def cutMessageUrl(url):
@@ -118,7 +121,7 @@ def SendMessage(message: str):
         SendRequest(url, payload_json, data, header_json)
 
 
-def getDockerData() -> list:
+def getDockerData() -> List[dict]:
     """Retrieve Docker image data including container name, size, and formatted creation date."""
     global docker_image_data
     resource_data = []
@@ -163,10 +166,9 @@ def getDockerData() -> list:
                     image_owner = "local"
                     image_name = fullname
                 repo_digests = image.attrs.get("RepoDigests", [])
-                digest = repo_digests[0].split("@")[1] if repo_digests else "NoDigest"
+                digest = repo_digests[0].split("@")[1] if repo_digests else image.attrs["Id"]
                 size_mb = image.attrs.get("Size", 0) / (1024 * 1024)
                 created_raw = image.attrs.get("Created", None)
-                logger.debug(f"Raw Created value for {fullname}:{image_tag}: {created_raw}")
                 if created_raw:
                     try:
                         if '.' in created_raw:
@@ -200,10 +202,50 @@ def getDockerData() -> list:
                     "status": "unknown",
                     "created": created
                 })
+        resource_data.sort(key=lambda x: x["container_name"])
         docker_image_data = resource_data
     except (DockerException, Exception) as e:
         logger.error(f"Error retrieving Docker data: {e}")
     return resource_data
+
+
+def getCurrentDigest() -> list[str]:
+    """Retrieve Docker image digests currently used by containers."""
+    resource_data = []
+    try:
+        docker_client = docker.DockerClient(base_url=platform_base_url, version="auto")
+        
+        images = docker_client.images.list(filters={'dangling': False})
+        all_containers = docker_client.containers.list(all=True)
+
+        used_image_ids = {}
+
+        for container in all_containers:
+            image_id = container.attrs['Image']
+            if image_id.startswith('sha256:'):
+                image_id = image_id[7:]
+            container_name = container.attrs['Name'].lstrip('/')
+            used_image_ids.setdefault(image_id, []).append(container_name)
+
+        for image in images:
+            if not image.tags:
+                continue
+
+            short_id = image.id[7:] if image.id.startswith('sha256:') else image.id
+
+            if short_id in used_image_ids:
+                repo_digests = image.attrs.get("RepoDigests", [])
+                if repo_digests and "@" in repo_digests[0]:
+                    digest = repo_digests[0].split("@")[1]
+                else:
+                    digest = image.attrs["Id"]
+                resource_data.append(digest)
+
+        return resource_data
+
+    except (DockerException, Exception) as e:
+        logger.error(f"Error retrieving Docker data: {e}")
+        return resource_data
 
 
 def getDockerDigest(registry: str, owner: str, image: str, tag: str) -> str:
@@ -264,12 +306,12 @@ def getDockerDigest(registry: str, owner: str, image: str, tag: str) -> str:
 
 def watchDigest():
     """Check for outdated Docker images by comparing local and remote digests."""
-    global old_list, docker_image_data, next_run_time, last_checked_time
+    global old_list, docker_image_data
     new_list = result = []
-    time_start = datetime.now()
     count_all = count_with_digest = 0
     for data in getDockerData():
         local_digest = data["digest"]
+        
         full_image = data["image"]
         source, rest = full_image.split("/", 1)
         owner_image, tag = rest.rsplit(":", 1)
@@ -294,30 +336,23 @@ def watchDigest():
                 if item["image"] != full_image:
                     continue
             
-                if local_digest == "NoDigest":
-                    item["status"] = "nodigest"
                 elif source.startswith("local"):
-                    item["status"] = "uptodate"
+                    item["status"] = "unable"
                 else:
                     item["status"] = "error"
+
         count_all += 1
     if new_list:
         if len(new_list) >= len(old_list):
             result = [item for item in new_list if item not in old_list]
     old_list = new_list
     with open(file_db, "w") as file:
-        file.writelines(old_list)
-    time_end = datetime.now()
-    elapsed = time_end - time_start
-    minutes, seconds = divmod(elapsed.total_seconds(), 60)
-    logger.info(f"Process complete! Execution time: {int(minutes):02d}:{int(seconds):02d}")
+        file.writelines(new_list)
+
     logger.info(f"{count_all} local digests tracked, {count_with_digest} completed.")
     if result:
         SendMessage(f"{header_message}{''.join(result)}")
         logger.info(f"{''.join(result).replace(orange_dot, '').replace('*', '').strip()}")
-    last_checked_time = time_end.strftime('%Y-%m-%d %H:%M:%S')
-    next_run_time = (time_end + timedelta(minutes=min_repeat)).strftime('%Y-%m-%d %H:%M:%S')
-    logger.info(f"Next run: {next_run_time}")
 
 
 @app.route('/')
@@ -331,6 +366,7 @@ def display_docker_data():
         green_dot=dots["green"],
         red_dot=dots["red"],
         yellow_dot=dots["yellow"],
+        white_dot=dots["white"],
         next_run=next_run_time,
         last_checked=last_checked_time
     )
@@ -339,7 +375,6 @@ def display_docker_data():
 @app.route('/health', methods=['GET'])
 def health_check():
     try:
-        logger.debug("Health check endpoint called")
         return jsonify({"status": "healthy"}), 200
     except Exception as e:
         logger.error(f"Health check failed: {e}")
@@ -357,15 +392,17 @@ if __name__ == "__main__":
     docker_info = getDockerInfo()
     node_name = docker_info["docker_engine_name"]
     old_list = []
+    old_digest = getCurrentDigest()
+    is_repeat_running = is_compare_digest_running = False
     config_file = os.path.join(os.path.dirname(os.path.realpath(__file__)), "config.json")
     file_db = os.path.join(os.path.dirname(os.path.realpath(__file__)), "data.db")
-    
+
     if os.path.exists(file_db):
         with open(file_db, "r") as file:
             old_list = file.readlines()
-    
-    dots = {"orange": "\U0001F7E0", "green": "\U0001F7E2", "red": "\U0001F534", "yellow": "\U0001F7E1"}
-    square_dots = {"orange": "\U0001F7E7", "green": "\U0001F7E9", "red": "\U0001F7E5", "yellow": "\U0001F7E8"}
+
+    dots = {"orange": "\U0001F7E0", "green": "\U0001F7E2", "red": "\U0001F534", "yellow": "\U0001F7E1", "white": "\U000026AA"}
+    square_dots = {"orange": "\U0001F7E7", "green": "\U0001F7E9", "red": "\U0001F7E5", "yellow": "\U0001F7E8", "white": "\U0001F533"}
     header_message = f"*{node_name}* (.digest)\n"
     monitoring_message = f"- docker engine: {docker_info['docker_version']},\n"
     
@@ -416,13 +453,55 @@ if __name__ == "__main__":
 
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
-    logger.info("Flask web server started at http://0.0.0.0:5151")
 
+    time_start = datetime.now()
     watchDigest()
+    time_end = datetime.now()
+    elapsed = time_end - time_start
+    minutes, seconds = divmod(elapsed.total_seconds(), 60)
+    logger.info(f"Process complete! Execution time: {int(minutes):02d}:{int(seconds):02d}")
+
+    last_checked_time = time_end.strftime('%Y-%m-%d %H:%M:%S')
+    next_run_time = (time_end + timedelta(minutes=min_repeat)).strftime('%Y-%m-%d %H:%M:%S')
+    logger.info(f"Next run: {next_run_time}")
 
     @repeat(every(min_repeat).minutes)
-    def RepeatCheck():
-        watchDigest()
+    def PerformPeriodicDigestCheck():
+        logger.info("Starting periodic digest check")
+        global is_repeat_running, last_checked_time, next_run_time, old_digest
+
+        if not is_compare_digest_running:
+            old_digest = getCurrentDigest()
+            is_repeat_running = True
+    
+            time_start = datetime.now()
+            watchDigest()
+            time_end = datetime.now()
+    
+            elapsed = time_end - time_start
+            minutes, seconds = divmod(elapsed.total_seconds(), 60)
+            logger.info(f"Process complete! Execution time: {int(minutes):02d}:{int(seconds):02d}")
+    
+            last_checked_time = time_end.strftime('%Y-%m-%d %H:%M:%S')
+            next_run_time = (time_end + timedelta(minutes=min_repeat)).strftime('%Y-%m-%d %H:%M:%S')
+            logger.info(f"Next run: {next_run_time}")
+    
+            is_repeat_running = False
+
+    @repeat(every(5).minutes)
+    def CompareAndUpdateDigest():
+        global old_digest, is_compare_digest_running
+        new_digest = []
+        
+        if not is_repeat_running:
+            is_compare_digest_running = True
+            logger.info(f"Compare Local Digest")
+            new_digest = getCurrentDigest()
+
+            if old_digest != new_digest:
+                watchDigest()
+                old_digest = new_digest
+            is_compare_digest_running = False
 
     while True:
         run_pending()
