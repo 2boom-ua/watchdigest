@@ -10,13 +10,13 @@
     <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
 </head>
 <body>
-    <h1>Last checked: {{ last_checked }} | Next run: {{ next_run }}</h1>
+    <h1>Last: {{ last_checked }} | Next: {{ next_run }}</h1>
     <table id="dockerTable">
         <thead>
             <tr>
                 <th>Container Name</th>
                 <th>Digest</th>
-                <th>Status</th>
+                <!--<th>{{ white_dot }}</th>-->
                 <th>Image</th>
                 <th>Size</th>
                 <th>Created</th>
@@ -27,20 +27,21 @@
                 <tr>
                     <td data-label="Container Name">{{ item.container_name }}</td>
                     <td data-label="Digest"><span class="truncate-digest">{{ item.digest }}</span></td>
-                    <td data-label="Status">
+                    <!-- <td data-label="Status">-->
+                    <td data-label="Image"><span class="truncate-image">
                         {% if item.status == "outdated" %}
-                            <span style="color: var(--warning); border-color: var(--warning);" title="Outdated">{{ orange_dot }}</span>
+                            <span title="Outdated">{{ orange_dot }}</span>
                         {% elif item.status == "uptodate" %}
-                            <span style="color: var(--success); border-color: var(--success);" title="Updated">{{ green_dot }}</span>
+                            <span title="Updated">{{ green_dot }}</span>
                         {% elif item.status == "error" %}
-                            <span style="color: var(--error); border-color: var(--error);" title="Error">{{ red_dot }}</span>
-                        {% elif item.status == "nodigest" %}
-                            <span style="color: var(--secondary); border-color: var(--secondary);" title="No Digest">{{ yellow_dot }}</span>
+                            <span title="Error">{{ red_dot }}</span>
+                        {% elif item.status == "unable" %}
+                            <span title="Unable update">{{ yellow_dot }}</span>
                         {% else %}
-                            <span title="Unknown">?</span>
+                            <span title="Unknown">{{ white_dot }}</span>
                         {% endif %}
-                    </td>
-                    <td data-label="Image"><span class="truncate-image">{{ item.image }}</span></td>
+                    <!--</td> -->
+                    {{ item.image }}</span></td>
                     <td data-label="Size">{{ item.size }}</td>
                     <td data-label="Created">{{ item.created }}</td>
                 </tr>
