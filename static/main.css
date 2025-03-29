@@ -80,14 +80,14 @@ html {
 
 body {
     margin: 5px 15px;
-    font-size: 1em;
+    font-size: 0.9em;
     width: 100%;
     position: relative;
 }
 
 h1 {
     color: var(--mapp);
-    font-size: 1em;
+    font-size: 0.95em;
     font-weight: normal;
     margin: 0 0 10px 0;
 }
@@ -95,13 +95,13 @@ h1 {
 table {
     width: 100%;
     border-collapse: collapse;
-    margin-top: 10px;
+    margin-top: 8px;
     background-color: var(--msbkg);
 }
 
 th, td {
     border: 1px solid var(--mborder);
-    padding: 8px;
+    padding: 5px 4px 5px 8px;
     text-align: left;
 }
 
@@ -120,7 +120,7 @@ td span[title] {
 
 .footer {
     position: relative;
-    margin-top: 15px;
+    margin-top: 7px;
     text-align: right;
     height: 26px;
     font-size: 0.8em;
@@ -186,7 +186,7 @@ td span[title] {
 
     td[data-label="Digest"] .truncate-digest,
     td[data-label="Image"] .truncate-image {
-        max-width: 80%;
+        max-width: 85%;
         width: 100%;
         white-space: nowrap;
         overflow: hidden;
