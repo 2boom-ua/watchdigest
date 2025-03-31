@@ -121,7 +121,6 @@ docker run --name watchdigest -p 5151:5151 -v ./config.json:/watchdigest/config.
 ```
 ### docker-compose
 ```
-version: "3.8"
 services:
   watchdigest:
     image: ghcr.io/2boom-ua/watchdigest:latest
