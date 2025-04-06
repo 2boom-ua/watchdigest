@@ -7,7 +7,7 @@
 WatchDigest is a monitoring tool that tracks Docker image updates by comparing local digests with remote registries (Docker Hub, GitHub Container Registry, GitLab and others). It periodically checks for outdated images and sends notifications via webhooks. 
 
 ### Features:
-Supports multiple container registries (docker.io, ghcr.io, registry.gitlab.com, etc.).
+Supports multiple container registries (docker.io, ghcr.io, lscr.io, registry.gitlab.com, etc.).
 Automated digest checking to detect outdated images.
 Webhook-based notifications (supports multiple messaging platforms).
 Configurable polling period via config.json.
@@ -37,7 +37,7 @@ Docker API integration to retrieve local image data.
 
 - Python 3.X or higher
 - Docker installed and running
-- Dependencies: `docker`, `requests`, `schedule`
+- Dependencies: `docker`, `requests`, `schedule`, `Flask`
 ---
 
 ### Edit config.json:
