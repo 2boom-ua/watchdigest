@@ -10,6 +10,7 @@ import time
 import requests
 import socket
 import logging
+from collections import deque
 import random
 import platform
 import threading
@@ -18,15 +19,39 @@ from schedule import every, repeat, run_pending
 from docker.errors import DockerException
 from urllib.parse import urlparse
 from datetime import datetime, timedelta
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, Response
 
 
-"""Configure logging"""
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
+class LimitedMemoryHandler(logging.Handler):
+    def __init__(self, capacity=200):
+        super().__init__()
+        self.log_buffer = deque(maxlen=capacity)
+
+    def emit(self, record):
+        formatted_message = self.format(record)
+        self.log_buffer.append(formatted_message)
+
+    def get_logs(self):
+        return list(self.log_buffer)
+
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+if logger.hasHandlers():
+    logger.handlers.clear()
+
+limited_handler = LimitedMemoryHandler(capacity=200)
+limited_handler.setLevel(logging.INFO)
+
+formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+limited_handler.setFormatter(formatter)
+
+logger.addHandler(limited_handler)
+
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_handler.setFormatter(formatter)
+logger.addHandler(console_handler)
 
 werkzeug_logger = logging.getLogger('werkzeug')
 werkzeug_logger.disabled = True
@@ -147,7 +172,7 @@ def getDockerData() -> List[dict]:
                 image_source = image_owner = image_name = image_tag = ""
                 fullname, image_tag = image.tags[0].rsplit(":", 1) if ":" in image.tags[0] else (image.tags[0], "latest")
                 parts = fullname.split("/")
-                if fullname.startswith(("ghcr.io", "registry.gitlab.com")):
+                if fullname.startswith(("ghcr.io", "lscr.io", "registry.gitlab.com")):
                     image_source = parts[0]
                     image_owner = parts[1]
                     image_name = "/".join(parts[2:]) if len(parts) > 2 else parts[1]
@@ -252,7 +277,7 @@ def getDockerDigest(registry: str, owner: str, image: str, tag: str) -> str:
     """Retrieve the latest digest for a Docker image from a registry."""
     digest = ""
     max_retries, retry_delay = 3, 2
-    if registry == "ghcr.io":
+    if registry in ["lscr.io", "ghcr.io"]:
         auth_url = f"https://ghcr.io/token?scope=repository:{owner}/{image}:pull"
         manifest_url = f"https://ghcr.io/v2/{owner}/{image}/manifests/{tag}"
     elif registry in ["docker.io", "registry.hub.docker.com"]:
@@ -295,7 +320,8 @@ def getDockerDigest(registry: str, owner: str, image: str, tag: str) -> str:
                                 "application/vnd.oci.image.manifest.v1+json"
                             ]:
                                 return manifest["digest"]
-            elif response.status_code == 404:
+            elif response.status_code == 401:
+                logger.error(f"Authentication failed for {manifest_url}")
                 return digest
             else:
                 time.sleep(retry_delay)
@@ -304,19 +330,19 @@ def getDockerDigest(registry: str, owner: str, image: str, tag: str) -> str:
     return digest
 
 
-def watchDigest():
+def watchDigest(show_log: bool):
     """Check for outdated Docker images by comparing local and remote digests."""
-    global old_list, docker_image_data
+    global old_list, last_checked_time, next_run_time
     new_list = result = []
     count_all = count_with_digest = 0
+    time_start = datetime.now()
     for data in getDockerData():
         local_digest = data["digest"]
-        
         full_image = data["image"]
         source, rest = full_image.split("/", 1)
         owner_image, tag = rest.rsplit(":", 1)
         owner, image = owner_image.split("/", 1) if "/" in owner_image else ("library", owner_image)
-        if source.startswith(("docker.io", "ghcr.io", "registry.gitlab.com", "registry.")):
+        if source.startswith(("docker.io", "ghcr.io", "lscr.io", "registry.gitlab.com", "registry.")):
             digest = getDockerDigest(source, owner, image, tag)
             if digest:
                 count_with_digest += 1
@@ -349,24 +375,45 @@ def watchDigest():
     with open(file_db, "w") as file:
         file.writelines(new_list)
 
+    if show_log:
+        time_end = datetime.now()
+        elapsed = time_end - time_start
+        minutes, seconds = divmod(elapsed.total_seconds(), 60)
+        logger.info(f"Process complete! Execution time: {int(minutes):02d}:{int(seconds):02d}")
+    
     logger.info(f"{count_all} local digests tracked, {count_with_digest} completed.")
+    
+    if show_log:
+        last_checked_time = time_end.strftime('%Y-%m-%d %H:%M:%S')
+        next_run_time = (time_end + timedelta(minutes=min_repeat)).strftime('%Y-%m-%d %H:%M:%S')
+        logger.info(f"Next run: {next_run_time}")
+
     if result:
         SendMessage(f"{header_message}{''.join(result)}")
-        logger.info(f"{''.join(result).replace(orange_dot, '').replace('*', '').strip()}")
+        for item in result:
+            logger.info(f"{str(item).replace(orange_dot, white_dot).replace('*', '').strip()}")
+        
+
+@app.route("/logs")
+def stream_logs():
+    """Stream the last log records."""
+    def generate():
+        for line in limited_handler.get_logs():
+            yield f"{line}<br>"
+    return Response(generate(), mimetype="text/html")
 
 
 @app.route('/')
 def display_docker_data():
     """Display Docker image data with last checked and scheduled next run times."""
-    global docker_image_data, dots, next_run_time, last_checked_time
     return render_template(
         'index.html',
         data=docker_image_data,
-        orange_dot=dots["orange"],
-        green_dot=dots["green"],
-        red_dot=dots["red"],
-        yellow_dot=dots["yellow"],
-        white_dot=dots["white"],
+        orange_emoji=orange_dot,
+        green_emoji=green_dot,
+        red_emoji=red_dot,
+        yellow_emoji=yellow_dot,
+        white_emoji=white_dot,
         next_run=next_run_time,
         last_checked=last_checked_time
     )
@@ -419,7 +466,7 @@ if __name__ == "__main__":
             logger.error("Error or incorrect settings in config.json. Using defaults.")
         if not default_dot_style:
             dots = square_dots
-        orange_dot = dots["orange"]
+        orange_dot, green_dot, red_dot, yellow_dot, white_dot = dots.values()
         no_messaging_keys = ["STARTUP_MESSAGE", "DEFAULT_DOT_STYLE", "MIN_REPEAT"]
         messaging_platforms = list(set(config_json) - set(no_messaging_keys))
         for platform in messaging_platforms:
@@ -441,7 +488,7 @@ if __name__ == "__main__":
             f"- polling period: {min_repeat} minutes."
         )
         if all(value in globals() for value in ["platform_webhook_url", "platform_header", "platform_payload", "platform_format_message"]):
-            logger.info("Initialization complete!")
+            logger.info(f"Initialization complete!")
             if startup_message:
                 SendMessage(f"{header_message}{monitoring_message}")
         else:
@@ -454,54 +501,43 @@ if __name__ == "__main__":
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
 
-    time_start = datetime.now()
-    watchDigest()
-    time_end = datetime.now()
-    elapsed = time_end - time_start
-    minutes, seconds = divmod(elapsed.total_seconds(), 60)
-    logger.info(f"Process complete! Execution time: {int(minutes):02d}:{int(seconds):02d}")
+    watchDigest(True)
 
-    last_checked_time = time_end.strftime('%Y-%m-%d %H:%M:%S')
-    next_run_time = (time_end + timedelta(minutes=min_repeat)).strftime('%Y-%m-%d %H:%M:%S')
-    logger.info(f"Next run: {next_run_time}")
 
     @repeat(every(min_repeat).minutes)
     def PerformPeriodicDigestCheck():
-        logger.info("Starting periodic digest check")
-        global is_repeat_running, last_checked_time, next_run_time, old_digest
+        logger.info("Initiating scheduled digest check")
+        global is_repeat_running, old_digest
+    
+        if is_compare_digest_running:
+            time.sleep(60)
+            logger.info("Compare digest already running — waiting 60 seconds")
+        
+        old_digest = getCurrentDigest()
+        is_repeat_running = True
+        watchDigest(True)
 
-        if not is_compare_digest_running:
-            old_digest = getCurrentDigest()
-            is_repeat_running = True
-    
-            time_start = datetime.now()
-            watchDigest()
-            time_end = datetime.now()
-    
-            elapsed = time_end - time_start
-            minutes, seconds = divmod(elapsed.total_seconds(), 60)
-            logger.info(f"Process complete! Execution time: {int(minutes):02d}:{int(seconds):02d}")
-    
-            last_checked_time = time_end.strftime('%Y-%m-%d %H:%M:%S')
-            next_run_time = (time_end + timedelta(minutes=min_repeat)).strftime('%Y-%m-%d %H:%M:%S')
-            logger.info(f"Next run: {next_run_time}")
-    
-            is_repeat_running = False
+        is_repeat_running = False
+
 
     @repeat(every(5).minutes)
     def CompareAndUpdateDigest():
-        global old_digest, is_compare_digest_running
-        new_digest = []
-        
-        if not is_repeat_running:
-            is_compare_digest_running = True
-            logger.info(f"Compare Local Digest")
-            new_digest = getCurrentDigest()
-
-            if old_digest != new_digest:
-                watchDigest()
-                old_digest = new_digest
-            is_compare_digest_running = False
+        global is_compare_digest_running, old_digest
+    
+        if is_repeat_running:
+            logger.info("Skipping digest comparison: repeat mode is active")
+            return
+    
+        is_compare_digest_running = True
+        logger.info("Performing local digest comparison")
+    
+        new_digest = getCurrentDigest()
+    
+        if old_digest != new_digest:
+            watchDigest(False)
+            old_digest = new_digest
+    
+        is_compare_digest_running = False
 
     while True:
         run_pending()
