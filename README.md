@@ -1,5 +1,5 @@
 <div align="center">  
-    <img src="https://github.com/2boom-ua/watchdigest/blob/main/static/mstile-144x144.png?raw=true" alt="" width="124" height="124">
+    <img src="https://github.com/2boom-ua/watchdigest/blob/main/screenshot.png?raw=true" alt="" width="1232" height="634">
 </div>
 
 ## Monitor Docker images for outdated digests and send notifications to various platforms when updates are available.
