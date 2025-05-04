@@ -5,25 +5,34 @@
 import json
 import docker
 import os
-import sys
 import time
-import requests
+import sys
 import socket
+import requests
 import logging
-from collections import deque
-import random
 import platform
+import subprocess
+import schedule
+import random
 import threading
-from typing import List
+from typing import List, Dict
 from schedule import every, repeat, run_pending
+from collections import deque
 from docker.errors import DockerException
 from urllib.parse import urlparse
-from datetime import datetime, timedelta
+from datetime import datetime, time as dtime, timedelta
 from flask import Flask, render_template, jsonify, request, Response
 
+default_start_times = ["03:00", "15:00"]
+upgrade_mode = True
+default_compose_files = ['compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml']
+list_of_outdated_images = []
+start_times_outdate_check = []
+docker_image_data = []
+old_list = []
 
 class LimitedMemoryHandler(logging.Handler):
-    def __init__(self, capacity=200):
+    def __init__(self, capacity=1000):
         super().__init__()
         self.log_buffer = deque(maxlen=capacity)
 
@@ -40,7 +49,7 @@ logger.setLevel(logging.INFO)
 if logger.hasHandlers():
     logger.handlers.clear()
 
-limited_handler = LimitedMemoryHandler(capacity=200)
+limited_handler = LimitedMemoryHandler(capacity=1000)
 limited_handler.setLevel(logging.INFO)
 
 formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
@@ -59,24 +68,18 @@ werkzeug_logger.disabled = True
 app = Flask(__name__)
 app.logger.disabled = True
 
-docker_image_data = old_docker_image_data = []
-
-next_run_time = "Unscheduled"
-last_checked_time = "Checking"
-
-
-def cutMessageUrl(url):
+def cut_message_url(url):
     """Truncate URL for logging brevity."""
     parsed_url = urlparse(url)
     return f"{parsed_url.scheme}://{parsed_url.netloc}...."
 
 
-def getPlatformBaseUrl() -> str:
+def get_platform_base_url() -> str:
     """Return Docker socket path based on OS."""
     return 'unix://var/run/docker.sock' if platform.system() == "Linux" else 'npipe:////./pipe/docker_engine'
 
 
-def getDockerInfo() -> dict:
+def get_docker_engine_info() -> dict:
     """Fetch Docker node name and version."""
     try:
         docker_client = docker.DockerClient(base_url=platform_base_url)
@@ -85,13 +88,47 @@ def getDockerInfo() -> dict:
             "docker_version": docker_client.version().get("Version", "")
         }
     except (DockerException, Exception) as e:
-        logger.error(f"Error fetching Docker info: {e}")
+        logger.error(f"Error fetching Docker info: {e}.")
         return {"docker_engine_name": "", "docker_version": ""}
 
 
-def SendMessage(message: str):
+def get_compose_version() -> dict:
+    """Return Docker Compose version as a dict: {'docker_compose_version': '<version>'}, or 'N/A' if not found."""
+
+    def extract_version(output):
+        for line in output.splitlines():
+            if 'version' in line.lower():
+                if 'v' in line and '.' in line:
+                    version = line.split('v')[-1].split()[0]
+                    if version.replace('.', '').isdigit():
+                        return version
+                for part in line.split():
+                    if part[0].isdigit() and '.' in part:
+                        version = part.split(',')[0]
+                        if version.replace('.', '').isdigit():
+                            return version
+        return None
+
+    commands = [
+        ["docker", "compose", "version"],
+        ["docker-compose", "version"]
+    ]
+
+    for cmd in commands:
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            version = extract_version(result.stdout)
+            if version:
+                return {"docker_compose_version": version}
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            continue
+
+    return {"docker_compose_version": "N/A"}
+
+
+def send_message(message: str):
     """Send HTTP POST requests with retry logic."""
-    def SendRequest(url, json_data=None, data=None, headers=None):
+    def send_request(url, json_data=None, data=None, headers=None):
         max_attempts = 5
         for attempt in range(max_attempts):
             try:
@@ -99,23 +136,23 @@ def SendMessage(message: str):
                 response.raise_for_status()
                 return
             except requests.exceptions.RequestException as e:
-                logger.error(f"Attempt {attempt + 1}/{max_attempts} - Error sending to {cutMessageUrl(url)}: {e}")
+                logger.error(f"Attempt {attempt + 1}/{max_attempts} - Error sending to {cut_message_url(url)}: {e}.")
                 if attempt == max_attempts - 1:
-                    logger.error(f"Failed to send to {cutMessageUrl(url)} after {max_attempts} attempts")
+                    logger.error(f"Failed to send to {cut_message_url(url)} after {max_attempts} attempts.")
                 else:
                     backoff_time = (2 ** attempt) + random.uniform(0, 1)
                     logger.warning(f"Retrying in {backoff_time:.2f} seconds...")
                     time.sleep(backoff_time)
 
-    def toHTMLFormat(message: str) -> str:
+    def to_html_format(message: str) -> str:
         """Convert message to HTML bold format."""
         message = ''.join(f"<b>{part}</b>" if i % 2 else part for i, part in enumerate(message.split('*')))
         return message.replace("\n", "<br>")
 
-    def toMarkdownFormat(message: str, markdown_type: str) -> str:
+    def to_markdown_format(message: str, markdown_type: str) -> str:
         """Format message based on specified type."""
         if markdown_type == "html":
-            return toHTMLFormat(message)
+            return to_html_format(message)
         elif markdown_type == "markdown":
             return message.replace("*", "**")
         elif markdown_type == "text":
@@ -128,7 +165,7 @@ def SendMessage(message: str):
 
     for url, header, payload, format_message in zip(platform_webhook_url, platform_header, platform_payload, platform_format_message):
         data, ntfy = None, False
-        formatted_message = toMarkdownFormat(message, format_message)
+        formatted_message = to_markdown_format(message, format_message)
         header_json = header if header else None
         for key in list(payload.keys()):
             if key == "title":
@@ -143,140 +180,121 @@ def SendMessage(message: str):
             payload[key] = formatted_message if key in ["text", "content", "message", "body", "formatted_body", "data"] else payload[key]
         payload_json = None if ntfy else payload
         data = formatted_message.encode("utf-8") if ntfy else None
-        SendRequest(url, payload_json, data, header_json)
+        send_request(url, payload_json, data, header_json)
 
 
-def getDockerData() -> List[dict]:
-    """Retrieve Docker image data including container name, size, and formatted creation date."""
+def deduplicate_data(data):
+    """Remove duplicates from data, preferring non-library images."""
+    seen = {}
+
+    for entry in data:
+        key = tuple(
+            (k, tuple(v) if isinstance(v, list) else v)
+            for k, v in sorted(entry.items()) if k != 'image'
+        )
+
+        if key in seen:
+            current_image = entry['image']
+            stored_image = seen[key]['image']
+            if not current_image.startswith('docker.io/library/') and stored_image.startswith('docker.io/library/'):
+                seen[key] = entry.copy()
+        else:
+            seen[key] = entry.copy()
+
+    return list(seen.values())
+
+
+def get_non_dangling_images() -> List[Dict[str, str]]:
     global docker_image_data
+
     resource_data = []
     try:
         docker_client = docker.DockerClient(base_url=platform_base_url, version="auto")
         images = docker_client.images.list(filters={'dangling': False})
-        all_containers = docker_client.containers.list(all=True)
-        used_image_ids = {}
-        for container in all_containers:
-            image_id = container.attrs['Image']
-            if image_id.startswith('sha256:'):
-                image_id = image_id[7:]
-            container_name = container.attrs['Name'].lstrip('/')
-            if image_id in used_image_ids:
-                used_image_ids[image_id].append(container_name)
-            else:
-                used_image_ids[image_id] = [container_name]
+        containers = docker_client.containers.list(all=True)
+
+        used_image_ids = {container.image.id for container in containers}
+        
         for image in images:
-            if not image.tags:
+
+            if image.id not in used_image_ids:
                 continue
-            short_id = image.id[7:] if image.id.startswith('sha256:') else image.id
-            if short_id in used_image_ids:
-                image_source = image_owner = image_name = image_tag = ""
-                fullname, image_tag = image.tags[0].rsplit(":", 1) if ":" in image.tags[0] else (image.tags[0], "latest")
-                parts = fullname.split("/")
-                if fullname.startswith(("ghcr.io", "lscr.io", "registry.gitlab.com")):
-                    image_source = parts[0]
-                    image_owner = parts[1]
-                    image_name = "/".join(parts[2:]) if len(parts) > 2 else parts[1]
-                elif fullname.startswith("registry.") and not fullname.startswith("registry.gitlab.com"):
-                    image_source = parts[0]
-                    image_owner = parts[1]
-                    image_name = "/".join(parts[2:]) if len(parts) > 2 else parts[1]
-                elif parts[0] in ["library", "postgres"]:
-                    image_source = "registry.hub.docker.com"
-                    image_owner, image_name = parts if len(parts) > 1 else ("library", parts[0])
-                elif len(parts) == 2:
-                    image_source = "docker.io"
-                    image_owner, image_name = parts
-                else:
-                    image_source = "local"
-                    image_owner = "local"
-                    image_name = fullname
-                repo_digests = image.attrs.get("RepoDigests", [])
-                digest = repo_digests[0].split("@")[1] if repo_digests else image.attrs["Id"]
-                size_mb = image.attrs.get("Size", 0) / (1024 * 1024)
-                created_raw = image.attrs.get("Created", None)
-                if created_raw:
-                    try:
-                        if '.' in created_raw:
-                            base, frac = created_raw.split('.')
-                            frac = frac.rstrip('Z')
-                            frac = frac[:6] + 'Z' if frac else '000000Z'
-                            created_raw_truncated = f"{base}.{frac}"
-                        else:
-                            created_raw_truncated = created_raw
+
+            image_tags = image.tags if image.tags else [image.attrs.get("RepoDigests", ["<untagged>"])[0]]
+            
+            repo_digests = image.attrs.get("RepoDigests", [])
+            
+            is_local = not repo_digests
+            
+            if is_local:
+                digest = f"sha256:{image.id.split(':')[-1]}"
+            else:
+                raw_digest = repo_digests[0] if repo_digests else None
+                digest = raw_digest.split('@')[1] if raw_digest and '@' in raw_digest else "unknown"
+
+            size_mb = image.attrs.get("Size", 0) / (1024 * 1024)
+
+            created_raw = image.attrs.get("Created", None)
+            created = "Unknown"
+            if created_raw:
+                try:
+                    if '.' in created_raw:
+                        base, frac = created_raw.split('.')
+                        frac = frac.rstrip('Z')
+                        frac = (frac + "000000")[:6]
+                        created_raw_truncated = f"{base}.{frac}Z"
                         created_dt = datetime.strptime(created_raw_truncated, "%Y-%m-%dT%H:%M:%S.%fZ")
-                        created = created_dt.strftime("%Y-%m-%d %H:%M:%S")
-                    except ValueError:
-                        try:
-                            created_dt = datetime.strptime(created_raw, "%Y-%m-%dT%H:%M:%SZ")
-                            created = created_dt.strftime("%Y-%m-%d %H:%M:%S")
-                        except ValueError:
-                            logger.error(f"Failed to parse Created timestamp: {created_raw}")
-                            created = "Unknown"
-                    except Exception as e:
-                        logger.error(f"Unexpected error parsing timestamp: {e}")
-                        created = "Unknown"
+                    else:
+                        created_dt = datetime.strptime(created_raw, "%Y-%m-%dT%H:%M:%SZ")
+                    created = created_dt.strftime("%Y-%m-%d %H:%M:%S")
+                except Exception as e:
+                    logger.error(f"Error parsing Created timestamp: {e}.")
+
+            for tag in image_tags:
+                parts = tag.split('/')
+                if is_local:
+                    image_name_tag = parts[-1]
+                    image_tag = f'local/{image_name_tag}'
                 else:
-                    logger.warning(f"No Created timestamp found for {fullname}:{image_tag}")
-                    created = "Unknown"
-                container_names = ", ".join(used_image_ids[short_id])
+                    if len(parts) == 1:
+                        image_tag = f'docker.io/library/{tag}'
+                    elif '.' not in parts[0] and ':' not in parts[0]:
+                        image_tag = f'docker.io/{tag}'
+                    else:
+                        image_tag = tag
+
+                container_names = [
+                    container.name for container in containers if container.image.id == image.id
+                ]
+                if "@sha256" in image_tag:
+                    image_tag = f"local/{image_tag.split('@')[0]}:<none>"
                 resource_data.append({
                     "container_name": container_names,
                     "digest": digest,
-                    "image": f"{image_source}/{image_owner}/{image_name}:{image_tag}",
+                    "image": image_tag,
                     "size": f"{size_mb:.2f} MB",
-                    "status": "unknown",
+                    "status": "uptodate",
                     "created": created
                 })
-        resource_data.sort(key=lambda x: x["container_name"])
-        docker_image_data = resource_data
+
     except (DockerException, Exception) as e:
-        logger.error(f"Error retrieving Docker data: {e}")
+        logger.error(f"Error retrieving Docker data: {e}.")
+
+    resource_data = deduplicate_data(resource_data)
+
+    resource_data.sort(key=lambda x: x["container_name"][0] if x["container_name"] else "")
+    for idx, item in enumerate(resource_data, start=1):
+        item["count"] = idx
+    docker_image_data = resource_data
+
     return resource_data
 
 
-def getCurrentDigest() -> list[str]:
-    """Retrieve Docker image digests currently used by containers."""
-    resource_data = []
-    try:
-        docker_client = docker.DockerClient(base_url=platform_base_url, version="auto")
-        
-        images = docker_client.images.list(filters={'dangling': False})
-        all_containers = docker_client.containers.list(all=True)
-
-        used_image_ids = {}
-
-        for container in all_containers:
-            image_id = container.attrs['Image']
-            if image_id.startswith('sha256:'):
-                image_id = image_id[7:]
-            container_name = container.attrs['Name'].lstrip('/')
-            used_image_ids.setdefault(image_id, []).append(container_name)
-
-        for image in images:
-            if not image.tags:
-                continue
-
-            short_id = image.id[7:] if image.id.startswith('sha256:') else image.id
-
-            if short_id in used_image_ids:
-                repo_digests = image.attrs.get("RepoDigests", [])
-                if repo_digests and "@" in repo_digests[0]:
-                    digest = repo_digests[0].split("@")[1]
-                else:
-                    digest = image.attrs["Id"]
-                resource_data.append(digest)
-
-        return resource_data
-
-    except (DockerException, Exception) as e:
-        logger.error(f"Error retrieving Docker data: {e}")
-        return resource_data
-
-
-def getDockerDigest(registry: str, owner: str, image: str, tag: str) -> str:
+def get_registry_digest(registry: str, owner: str, image: str, tag: str) -> str:
     """Retrieve the latest digest for a Docker image from a registry."""
     digest = ""
     max_retries, retry_delay = 3, 2
+
     if registry in ["lscr.io", "ghcr.io"]:
         auth_url = f"https://ghcr.io/token?scope=repository:{owner}/{image}:pull"
         manifest_url = f"https://ghcr.io/v2/{owner}/{image}/manifests/{tag}"
@@ -290,12 +308,14 @@ def getDockerDigest(registry: str, owner: str, image: str, tag: str) -> str:
     else:
         auth_url = f"https://{registry}/v2/token"
         manifest_url = f"https://{registry}/v2/{owner}/{image}/manifests/{tag}"
+
     try:
         response_token = requests.get(auth_url, params=auth_params if registry in ["docker.io", "registry.hub.docker.com"] else None)
         if response_token.status_code == 200:
             token = response_token.json().get("token", "")
         else:
             return digest
+
         headers = {
             "Authorization": f"Bearer {token}",
             "Accept": ", ".join([
@@ -305,6 +325,7 @@ def getDockerDigest(registry: str, owner: str, image: str, tag: str) -> str:
                 "application/vnd.oci.image.index.v1+json",
             ])
         }
+
         for attempt in range(max_retries):
             response = requests.get(manifest_url, headers=headers)
             if response.status_code == 200:
@@ -321,78 +342,344 @@ def getDockerDigest(registry: str, owner: str, image: str, tag: str) -> str:
                             ]:
                                 return manifest["digest"]
             elif response.status_code == 401:
-                logger.error(f"Authentication failed for {manifest_url}")
+                logger.error(f"Authentication failed for {manifest_url}.")
                 return digest
             else:
                 time.sleep(retry_delay)
+
     except requests.exceptions.RequestException as e:
-        logger.error(f"Request error: {e}")
+        logger.error(f"Request error: {e}.")
+
     return digest
 
 
-def watchDigest(show_log: bool):
-    """Check for outdated Docker images by comparing local and remote digests."""
-    global old_list, last_checked_time, next_run_time
-    new_list = result = []
-    count_all = count_with_digest = 0
-    time_start = datetime.now()
-    for data in getDockerData():
+def get_outdated_digests() -> List[dict]:
+    """Check for outdated Docker images and return list with container names and image info."""
+    outdated_images = []
+    seen = set()
+
+    for data in get_non_dangling_images():
         local_digest = data["digest"]
         full_image = data["image"]
-        source, rest = full_image.split("/", 1)
-        owner_image, tag = rest.rsplit(":", 1)
-        owner, image = owner_image.split("/", 1) if "/" in owner_image else ("library", owner_image)
-        if source.startswith(("docker.io", "ghcr.io", "lscr.io", "registry.gitlab.com", "registry.")):
-            digest = getDockerDigest(source, owner, image, tag)
+        container_names = data["container_name"]
+
+        if full_image.startswith("local/") or local_digest == "unknown":
+            continue
+
+        try:
+            source, rest = full_image.split("/", 1)
+            owner_image, tag = rest.rsplit(":", 1)
+            owner, image = owner_image.split("/", 1) if "/" in owner_image else ("library", owner_image)
+        except ValueError:
+            logger.warning(f"Unable to parse image: {full_image}.")
+            continue
+
+        if source.startswith(("docker.io", "ghcr.io", "lscr.io", "registry.")):
+            remote_digest = get_registry_digest(source, owner, image, tag)
+            display_image = full_image.replace("docker.io/", "") if source.startswith("docker.io") else full_image
+
+            if remote_digest and remote_digest != local_digest:
+                unique_containers = set(container_names)
+                for container in unique_containers:
+                    entry = {"container_name": container, "image": display_image}
+                    entry_tuple = (container, display_image)
+                    if entry_tuple not in seen:
+                        seen.add(entry_tuple)
+                        outdated_images.append(entry)
+
+    if outdated_images:
+        for image in outdated_images:
+            logger.info(f"Outdated image detected - Container: {image['container_name']}, Image: {image['image']}.")
+
+    return outdated_images
+
+
+def get_outdated_digests_list():
+    """Check for outdated Docker images and return list with container names and image info."""
+    global old_list, docker_image_data
+
+    docker_image_data = get_non_dangling_images()
+    new_list = result = []
+    count_all = count_with_digest = 0
+
+    for data in docker_image_data:
+        local_digest = data["digest"]
+        full_image = data["image"]
+        container_names = data["container_name"]
+
+        try:
+            source, rest = full_image.split("/", 1)
+            owner_image, tag = rest.rsplit(":", 1)
+            owner, image = owner_image.split("/", 1) if "/" in owner_image else ("library", owner_image)
+        except ValueError:
+            logger.warning(f"Unable to parse image: {full_image}.")
+            data["status"] = "error"
+            continue
+
+        if source.startswith(("docker.io", "ghcr.io", "lscr.io", "registry.")):
+            digest = get_registry_digest(source, owner, image, tag)
             if digest:
                 count_with_digest += 1
-            for item in docker_image_data:
-                if item["image"] != full_image:
-                    continue
 
-                if digest and digest != local_digest:
-                    item["status"] = "outdated"
+            if digest:
+                if digest != local_digest:
+                    data["status"] = "outdated"
                     new_list.append(f"{orange_dot} *{owner}/{image}:{tag}* outdated!\n")
-                elif digest:
-                    item["status"] = "uptodate"
                 else:
-                    item["status"] = "error"
+                    data["status"] = "uptodate"
+            else:
+                data["status"] = "error"
+
+        elif source.startswith("local"):
+            data["status"] = "unable"
         else:
-            for item in docker_image_data:
-                if item["image"] != full_image:
-                    continue
-            
-                elif source.startswith("local"):
-                    item["status"] = "unable"
-                else:
-                    item["status"] = "error"
+            data["status"] = "error"
 
         count_all += 1
-    if new_list:
-        if len(new_list) >= len(old_list):
-            result = [item for item in new_list if item not in old_list]
+
+    if new_list and len(new_list) >= len(old_list):
+        result = [item for item in new_list if item not in old_list]
+
     old_list = new_list
+
     with open(file_db, "w") as file:
         file.writelines(new_list)
 
-    if show_log:
-        time_end = datetime.now()
-        elapsed = time_end - time_start
-        minutes, seconds = divmod(elapsed.total_seconds(), 60)
-        logger.info(f"Process complete! Execution time: {int(minutes):02d}:{int(seconds):02d}")
-    
     logger.info(f"{count_all} local digests tracked, {count_with_digest} completed.")
-    
-    if show_log:
-        last_checked_time = time_end.strftime('%Y-%m-%d %H:%M:%S')
-        next_run_time = (time_end + timedelta(minutes=min_repeat)).strftime('%Y-%m-%d %H:%M:%S')
-        logger.info(f"Next run: {next_run_time}")
 
     if result:
-        SendMessage(f"{header_message}{''.join(result)}")
+        if notify_enabled:
+            send_message(f"{header_message}{''.join(result)}")
         for item in result:
             logger.info(f"{str(item).replace(orange_dot, white_dot).replace('*', '').strip()}")
-        
+
+
+def pull_and_restart_outdated_images():
+    """Pull updated images, restart containers, and remove unused images."""
+    def find_compose_file(working_dir):
+        try:
+            if not os.path.isdir(working_dir):
+                logger.error(f"Directory {working_dir} does not exist.")
+                return None
+
+            dir_contents = os.listdir(working_dir)
+            for compose_file in compose_files:
+                if compose_file in dir_contents:
+                    return os.path.join(working_dir, compose_file)
+
+            logger.info(f"No valid compose file found in {working_dir}.")
+            return None
+
+        except FileNotFoundError:
+            logger.error(f"Directory {working_dir} does not exist.")
+            return None
+        except PermissionError:
+            logger.error(f"Permission denied accessing {working_dir}.")
+            return None
+
+    def get_compose_command():
+        """Determine whether to use 'docker compose' (v2) or 'docker-compose' (v1)"""
+        try:
+            subprocess.run(
+                ["docker", "compose", "version"],
+                capture_output=True,
+                check=True
+            )
+            return ["docker", "compose"]
+        except FileNotFoundError:
+            logger.error("'docker' command not found in PATH.")
+        except subprocess.CalledProcessError as e:
+            logger.error(f"'docker compose' exists but failed: {e.stderr.decode().strip()}")
+
+        try:
+            subprocess.run(
+                ["docker-compose", "version"],
+                capture_output=True,
+                check=True
+            )
+            return ["docker-compose"]
+        except FileNotFoundError:
+            logger.error("'docker-compose' command not found in PATH.")
+        except subprocess.CalledProcessError as e:
+            logger.error(f"'docker-compose' exists but failed: {e.stderr.decode().strip()}")
+
+        logger.error("Neither 'docker compose' (v2) nor 'docker-compose' (v1) is installed or functional.")
+        raise RuntimeError("Neither 'docker compose' (v2) nor 'docker-compose' (v1) is installed.")
+
+    try:
+        docker_client = docker.DockerClient(base_url=platform_base_url, version="auto")
+        outdated = list_of_outdated_images
+
+        used_images_before = {c.image.id for c in docker_client.containers.list(all=True)}
+
+        successful_pulls = set()
+        for entry in outdated:
+            image = entry["image"]
+            logger.info(f"Pulling updated image for: {image}.")
+            try:
+                docker_client.images.pull(image)
+                logger.info(f"Successfully pulled: {image}.")
+                successful_pulls.add(image)
+            except docker.errors.APIError as e:
+                logger.error(f"Failed to pull {image}: {e}.")
+            time.sleep(10)
+
+        for entry in outdated:
+            image = entry["image"]
+            container_name = entry["container_name"]
+            
+            if image not in successful_pulls:
+                logger.info(f"Skipping container {container_name} - image {image} was not successfully pulled!")
+                continue
+
+            container = docker_client.containers.get(container_name)
+            working_dir = container.attrs['Config']['Labels'].get('com.docker.compose.project.working_dir')
+
+            if working_dir:
+                compose_file_name = find_compose_file(working_dir)
+                compose_cmd = get_compose_command()
+                logger.info(f"Restarting container {container_name} using docker compose in {working_dir}{compose_file_name}.")
+                try:
+                    subprocess.run(
+                        compose_cmd + ["-f", compose_file_name, "up", "-d", container_name],
+                        cwd=working_dir,
+                        check=True,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+                except subprocess.CalledProcessError as e:
+                    logger.error(f"Failed to restart using docker compose in {working_dir}: {e}.")
+            else:
+                logger.info(f"Restarting container {container_name} using Docker SDK.")
+                try:
+                    container.stop()
+                    container.remove()
+                    docker_client.containers.run(image, name=container_name, detach=True)
+                except docker.errors.APIError as e:
+                    logger.error(f"Failed to restart {container_name}: {e}.")
+
+        used_images_after = {c.image.id for c in docker_client.containers.list(all=True)}
+        unused_images = used_images_before - used_images_after
+
+        for image_id in unused_images:
+            try:
+                docker_client.images.remove(image_id)
+                logger.info(f"Removed unused image: {image_id}.")
+            except docker.errors.APIError as e:
+                logger.warning(f"Failed to remove image {image_id}: {e}.")
+        time.sleep(10)
+
+    except DockerException as e:
+        logger.error(f"Error in updating and restarting containers: {e}.")
+
+
+def maintain_container_images():
+    logger.info("Checking for outdated container images that need upgrading...")
+    global list_of_outdated_images
+    next_run_time = get_next_start_time(start_times)
+    time_start = datetime.now()
+
+    list_of_outdated_images = get_outdated_digests()
+    if list_of_outdated_images:
+        # logger.info("Simulating image pull and container restart...")
+        pull_and_restart_outdated_images()
+
+    get_outdated_digests_list()
+    time_end = datetime.now()
+    elapsed = time_end - time_start
+    minutes, seconds = divmod(elapsed.total_seconds(), 60)
+    logger.info(f"Image upgrade check completed in {int(minutes):02d}:{int(seconds):02d}.")
+    logger.info(f"Next scheduled image upgrade check: {next_run_time}.")
+
+
+def checkonly_container_images():
+    logger.info("Checking for outdated container images (no actions will be taken)...")
+    start_times_outdate_check = get_starts_check_times(start_times, upgrade_mode)
+    next_run_time = get_next_start_time(start_times_outdate_check)
+    time_start = datetime.now()
+
+    get_outdated_digests_list()
+
+    time_end = datetime.now()
+    elapsed = time_end - time_start
+    minutes, seconds = divmod(elapsed.total_seconds(), 60)
+    logger.info(f"Outdated image check completed in {int(minutes):02d}:{int(seconds):02d}.")
+    logger.info(f"Next scheduled outdated image check: {next_run_time}.")
+
+
+def get_next_start_time(start_times):
+    now = datetime.now()
+    current_time = now.time()
+
+    if not start_times:
+        start_times = default_start_times
+
+    time_objects = [datetime.strptime(t, "%H:%M").time() for t in start_times if t]
+
+    if not time_objects:
+        time_objects = [datetime.strptime(t, "%H:%M").time() for t in default_start_times]
+
+    for t in time_objects:
+        if current_time < t:
+            return datetime.combine(now.date(), t).strftime("%Y-%m-%d %H:%M")
+
+    tomorrow = now.date() + timedelta(days=1)
+    return datetime.combine(tomorrow, time_objects[0]).strftime("%Y-%m-%d %H:%M")
+
+
+def get_starts_check_times(start_times, upgrade_mode=True):
+    timeshift_minutes = 40
+    check_times = set()
+    parsed_times = [datetime.strptime(t, "%H:%M") for t in start_times]
+    parsed_times.sort()
+
+    for i in range(1, len(parsed_times)):
+        time_diff = (parsed_times[i] - parsed_times[i-1]).total_seconds() / 60
+        if time_diff < timeshift_minutes:
+            raise ValueError(f"Start times {parsed_times[i-1].strftime('%H:%M')} and "
+                           f"{parsed_times[i].strftime('%H:%M')} are less than "
+                           f"{timeshift_minutes} minutes apart")
+
+    all_times = []
+    for i, start in enumerate(parsed_times):
+        new_time_decrease = start - timedelta(minutes=timeshift_minutes)
+        new_time_increase = start + timedelta(minutes=timeshift_minutes)
+        additional_time = start - timedelta(minutes=timeshift_minutes * 2)
+
+        check_times.add(new_time_decrease.strftime("%H:%M"))
+        check_times.add(new_time_increase.strftime("%H:%M"))
+        all_times.extend([new_time_decrease, new_time_increase])
+
+        add_additional = True
+        for prev_time in all_times:
+            time_diff = abs((additional_time - prev_time).total_seconds() / 60)
+            if time_diff < timeshift_minutes:
+                add_additional = False
+                break
+
+        if add_additional:
+            check_times.add(additional_time.strftime("%H:%M"))
+            all_times.append(additional_time)
+
+        if not upgrade_mode:
+            all_times.append(start)
+
+    if not upgrade_mode:
+        for start in parsed_times:
+            check_times.add(start.strftime("%H:%M"))
+            if start not in all_times:
+                all_times.append(start)
+
+    all_times.sort()
+    for i in range(1, len(all_times)):
+        time_diff = (all_times[i] - all_times[i-1]).total_seconds() / 60
+        if time_diff < timeshift_minutes:
+            raise ValueError(f"Generated times {all_times[i-1].strftime('%H:%M')} and "
+                           f"{all_times[i].strftime('%H:%M')} are less than "
+                           f"{timeshift_minutes} minutes apart")
+
+    return sorted(list(check_times))
+
 
 @app.route("/logs")
 def stream_logs():
@@ -406,25 +693,33 @@ def stream_logs():
 @app.route('/')
 def display_docker_data():
     """Display Docker image data with last checked and scheduled next run times."""
+    display_data = []
+
+    for data in docker_image_data:
+        temp = data.copy()
+        if isinstance(temp["container_name"], list):
+            temp["container_name"] = ", ".join(temp["container_name"])
+        temp["image"] = temp["image"].replace("docker.io/", "").replace("local/", "")
+        display_data.append(temp)
+
     return render_template(
         'index.html',
-        data=docker_image_data,
+        data=display_data,
         orange_emoji=orange_dot,
         green_emoji=green_dot,
         red_emoji=red_dot,
         yellow_emoji=yellow_dot,
         white_emoji=white_dot,
-        next_run=next_run_time,
-        last_checked=last_checked_time
     )
 
 
 @app.route('/health', methods=['GET'])
 def health_check():
+    """Health check endpoint."""
     try:
         return jsonify({"status": "healthy"}), 200
     except Exception as e:
-        logger.error(f"Health check failed: {e}")
+        logger.error(f"Health check failed: {e}.")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
@@ -435,39 +730,65 @@ def run_flask():
 
 if __name__ == "__main__":
     """Initialize and start monitoring."""
-    platform_base_url = getPlatformBaseUrl()
-    docker_info = getDockerInfo()
-    node_name = docker_info["docker_engine_name"]
-    old_list = []
-    old_digest = getCurrentDigest()
-    is_repeat_running = is_compare_digest_running = False
+    logger.info("Starting container image monitor...")
+
     config_file = os.path.join(os.path.dirname(os.path.realpath(__file__)), "config.json")
     file_db = os.path.join(os.path.dirname(os.path.realpath(__file__)), "data.db")
 
-    if os.path.exists(file_db):
-        with open(file_db, "r") as file:
-            old_list = file.readlines()
+    platform_base_url = get_platform_base_url()
+    start_times = default_start_times
+
+    compose_files = default_compose_files
 
     dots = {"orange": "\U0001F7E0", "green": "\U0001F7E2", "red": "\U0001F534", "yellow": "\U0001F7E1", "white": "\U000026AA"}
     square_dots = {"orange": "\U0001F7E7", "green": "\U0001F7E9", "red": "\U0001F7E5", "yellow": "\U0001F7E8", "white": "\U0001F533"}
-    header_message = f"*{node_name}* (.digest)\n"
-    monitoring_message = f"- docker engine: {docker_info['docker_version']},\n"
-    
-    if os.path.exists(config_file):
-        with open(config_file, "r") as file:
-            config_json = json.loads(file.read())
+
+    docker_info = get_docker_engine_info()
+    node_name = docker_info.get("docker_engine_name", "Unknown")
+    monitoring_message = ""
+    compose_version = get_compose_version()
+
+    logger.info(f"docker engine: {docker_info.get('docker_version', 'N/A')}.")
+    logger.info(f"docker compose: {compose_version.get('docker_compose_version', 'N/A')}.")
+
+    header_message = (
+        f"*{node_name}* (.digest)\n"
+        f"- docker engine: {docker_info.get('docker_version', 'N/A')},\n"
+        f"- docker compose: {compose_version.get('docker_compose_version', 'N/A')},\n"
+        f"- auto-upgrade mode: {'On' if upgrade_mode else 'Off'},\n"
+    )
+
+    if os.path.exists(file_db):
         try:
+            with open(file_db, "r") as file:
+                old_list = file.readlines()
+        except Exception as e:
+            logger.warning(f"Unable to read {file_db}: {e}.")
+
+    if os.path.exists(config_file):
+        try:
+            with open(config_file, "r") as file:
+                config_json = json.load(file)
             startup_message = config_json.get("STARTUP_MESSAGE", True)
+            notify_enabled = config_json.get("NOTIFY_ENABLED", False)
             default_dot_style = config_json.get("DEFAULT_DOT_STYLE", True)
-            min_repeat = max(int(config_json.get("MIN_REPEAT", 15)), 15)
-        except (json.JSONDecodeError, ValueError, TypeError, KeyError):
-            startup_message, default_dot_style = True, True
-            min_repeat = 15
-            logger.error("Error or incorrect settings in config.json. Using defaults.")
-        if not default_dot_style:
-            dots = square_dots
-        orange_dot, green_dot, red_dot, yellow_dot, white_dot = dots.values()
-        no_messaging_keys = ["STARTUP_MESSAGE", "DEFAULT_DOT_STYLE", "MIN_REPEAT"]
+            upgrade_mode = config_json.get("UPGRADE_MODE", True)
+            start_times = config_json.get("START_TIMES", default_start_times)
+            compose_files = config_json.get("COMPOSE_FILES", default_compose_files)
+        except (json.JSONDecodeError, ValueError, TypeError, KeyError) as e:
+            logger.error(f"Error reading or parsing config.json: {e}. Using default times.")
+    else:
+        logger.error("config.json not found. Using default times.")
+
+    if not notify_enabled:
+        startup_message = False
+
+    if not default_dot_style:
+        dots = square_dots
+    orange_dot, green_dot, red_dot, yellow_dot, white_dot = dots.values()
+
+    no_messaging_keys = ["STARTUP_MESSAGE", "NOTIFY_ENABLED", "DEFAULT_DOT_STYLE", "UPGRADE_MODE", "START_TIMES", "COMPOSE_FILES"]
+    if notify_enabled:
         messaging_platforms = list(set(config_json) - set(no_messaging_keys))
         for platform in messaging_platforms:
             if config_json[platform].get("ENABLED", False):
@@ -480,65 +801,43 @@ if __name__ == "__main__":
                         globals()[platform_key] = value if isinstance(value, list) else [value]
                 monitoring_message += f"- messaging: {platform.lower().capitalize()},\n"
         monitoring_message = "\n".join([*sorted(monitoring_message.splitlines()), ""])
-        st_message = "Yes" if startup_message else "No"
-        dt_style = "Round" if default_dot_style else "Square"
         monitoring_message += (
-            f"- startup message: {st_message},\n"
-            f"- dot style: {dt_style},\n"
-            f"- polling period: {min_repeat} minutes."
+            f"- startup message: {'On' if startup_message else 'Off'},\n"
+            f"- dot style: {'Round' if default_dot_style else 'Square'}.\n"
         )
+
         if all(value in globals() for value in ["platform_webhook_url", "platform_header", "platform_payload", "platform_format_message"]):
-            logger.info(f"Initialization complete!")
             if startup_message:
-                SendMessage(f"{header_message}{monitoring_message}")
-        else:
-            logger.error("Invalid config.json")
-            sys.exit(1)
-    else:
-        logger.error("config.json not found")
-        sys.exit(1)
+                send_message(f"{header_message}{monitoring_message}")
+
+    header_message = header_message.split('\n')[0]
+    header_message = f"{header_message}\n"
 
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
-
-    watchDigest(True)
-
-
-    @repeat(every(min_repeat).minutes)
-    def PerformPeriodicDigestCheck():
-        logger.info("Initiating scheduled digest check")
-        global is_repeat_running, old_digest
     
-        if is_compare_digest_running:
-            time.sleep(60)
-            logger.info("Compare digest already running — waiting 60 seconds")
-        
-        old_digest = getCurrentDigest()
-        is_repeat_running = True
-        watchDigest(True)
+    logger.info(f"Initialization complete. Auto-upgrade mode: {'On' if upgrade_mode else 'Off'}.")
+    logger.info(f"Notifications to a messaging system: {'On' if notify_enabled else 'Off'}.")
 
-        is_repeat_running = False
+    try:
+        start_times_outdate_check = get_starts_check_times(start_times, upgrade_mode)
+        if upgrade_mode:
+            logger.info(f"Using check times for image upgrade: {', '.join(start_times)}.")
+        logger.info(f"First scheduled image upgrade check: {get_next_start_time(start_times)}.")
+    except ValueError as e:
+        start_times_outdate_check = get_starts_check_times(default_start_times, upgrade_mode)
+        logger.error(f"Error: {e}")
+        logger.warning(f"Invalid start time settings in config.json. Using default values: {start_times}. Please update the configuration.")
 
+    checkonly_container_images()
 
-    @repeat(every(5).minutes)
-    def CompareAndUpdateDigest():
-        global is_compare_digest_running, old_digest
-    
-        if is_repeat_running:
-            logger.info("Skipping digest comparison: repeat mode is active")
-            return
-    
-        is_compare_digest_running = True
-        logger.info("Performing local digest comparison")
-    
-        new_digest = getCurrentDigest()
-    
-        if old_digest != new_digest:
-            watchDigest(False)
-            old_digest = new_digest
-    
-        is_compare_digest_running = False
+    for stime in start_times_outdate_check:
+        schedule.every().day.at(stime).do(checkonly_container_images)
+
+    if upgrade_mode:
+        for stime in start_times:
+            schedule.every().day.at(stime).do(maintain_container_images)
 
     while True:
-        run_pending()
-        time.sleep(1)
+        schedule.run_pending()
+        time.sleep(60)
