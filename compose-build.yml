@@ -11,7 +11,8 @@ services:
       - ./config.json:/watchdigest/config.json
       - ./data.db:/watchdigest/data.db
       - /var/run/docker.sock:/var/run/docker.sock
+      - /opt:/opt
     environment:
-      - TZ=Etc/UTC
+      - TZ=Europe/Kyiv
     restart: always
 
