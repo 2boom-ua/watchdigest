@@ -215,8 +215,7 @@ td span[title] {
         margin-left: 0;
         padding: 2px;
     }
-    td[data-label="Digest"] .truncate-digest,
-    td[data-label="Image"] .truncate-image {
+    td[data-label="Digest"] .truncate-digest {
         max-width: 98%;
         width: 100%;
         white-space: nowrap;
@@ -226,6 +225,10 @@ td span[title] {
 
     td:last-child {
         border-bottom: none;
+    }
+    
+    td[data-label="Count"] {
+        display: none;
     }
 
     #logContent {
