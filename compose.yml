@@ -1,14 +1,15 @@
 services:
   watchdigest:
     image: ghcr.io/2boom-ua/watchdigest:latest
-    image: watchdigest:latest
+    container_name: watchdigest
     ports:
       - 5151:5151
     volumes:
       - ./config.json:/watchdigest/config.json
       - ./data.db:/watchdigest/data.db
       - /var/run/docker.sock:/var/run/docker.sock
+      - /opt:/opt
     environment:
-      - TZ=Etc/UTC
+      - TZ=UTC
     restart: always
 
