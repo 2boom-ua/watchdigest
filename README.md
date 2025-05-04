@@ -4,11 +4,12 @@
 
 ## Docker monitoring tool that tracks Docker image updates
 
-WatchDigest is a monitoring tool that tracks Docker image updates by comparing local digests with remote registries (Docker Hub, GitHub Container Registry, GitLab and others). It periodically checks for outdated images and sends notifications via webhooks. 
+WatchDigest is a Python-based monitoring tool that scans local Docker containers, checks whether their images are outdated, and optionally updates those images. It can notify you across a wide range of messaging platforms when updates are available or have been applied.
 
 ### Features:
 Supports multiple container registries (docker.io, ghcr.io, lscr.io, registry.gitlab.com, etc.).
 Automated digest checking to detect outdated images.
+Optionally auto-update outdated Docker images and restart containers.
 Webhook-based notifications (supports multiple messaging platforms).
 Configurable polling period via config.json.
 Docker API integration to retrieve local image data.
@@ -83,15 +84,21 @@ You can use any name and any number of records for each messaging platform confi
 - **text** - raw text without any styling or formatting.
 
 ```
-    "STARTUP_MESSAGE": true,
+    "STARTUP_MESSAGE": false,
+    "NOTIFY_ENABLED": true,
+    "UPGRADE_MODE": true,
+    "START_TIMES": ["06:00", "14:00", "22:00"],
+    "COMPOSE_FILES": ["compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"]
     "DEFAULT_DOT_STYLE": true,
-    "MIN_REPEAT": 60
 ```
 | Item   | Required   | Description   |
 |------------|------------|------------|
 | STARTUP_MESSAGE | true/false | On/Off startup message. | 
+| NOTIFY_ENABLED | true/false | On/Off notification via messaging platforms. | 
+| UPGRADE_MODE       | true/false   | Automatically pull and restart containers with updated images if enabled.  |
+| START_TIMES        | list[string] | Specific times (24h format) to run the script if scheduled.                 |
+| COMPOSE_FILES      | list[string] | Compose filenames to detect and use when recreating containers.            |
 | DEFAULT_DOT_STYLE | true/false | Round/Square dots. |
-| MIN_REPEAT | 60 | Set the poll period in minutes. Minimum is 15 minutes. | 
 ---
 
 ### Clone the repository:
