@@ -4,16 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="msapplication-TileImage" content="{{ url_for('static', filename='mstile-144x144.png') }}">
+    <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
     <title>Watchdigest</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='main.css') }}"/>
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}"/>
     <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
 </head>
 <body>
-    <h1>{{ white_emoji }} {{ last_checked }}  {{ green_emoji }} {{ next_run }}</h1>
     <table id="dockerTable">
         <thead>
             <tr>
+                <th>#</th>
                 <th>Container Name</th>
                 <th>{{ white_emoji }}</th>
                 <th>Image</th>
@@ -21,31 +23,33 @@
                 <th>Size</th>
                 <th>Created</th>
             </tr>
-        </thead>
-        <tbody>
-            {% for item in data %}
-                <tr>
-                    <td data-label="Container Name">{{ item.container_name }}</td>
-                    <td data-label="Status">
-                        {% if item.status == "outdated" %}
-                            <span title="Outdated">{{ orange_emoji }}</span>
-                        {% elif item.status == "uptodate" %}
-                            <span title="Updated">{{ green_emoji }}</span>
-                        {% elif item.status == "error" %}
-                            <span title="Error">{{ red_emoji }}</span>
-                        {% elif item.status == "unable" %}
-                            <span title="Unable check">{{ yellow_emoji }}</span>
-                        {% else %}
-                            <span title="Unknown">{{ white_emoji }}</span>
-                        {% endif %}
-                    </td>
-                    <td data-label="Image"><span class="truncate-image">{{ item.image }}</span></td>
-                    <td data-label="Digest"><span class="truncate-digest">{{ item.digest }}</span></td>
-                    <td data-label="Size">{{ item.size }}</td>
-                    <td data-label="Created">{{ item.created }}</td>
-                </tr>
-            {% endfor %}
-        </tbody>
+    </thead>
+    <tbody>
+        {% for item in data %}
+            <tr>
+                <td data-label="Count">{{ item.count }}</td>
+                <td data-label="Container Name">{{ item.container_name }}</td>
+                <td data-label="Status">
+                    {% if item.status == "outdated" %}
+                        <span title="Outdated">{{ orange_emoji }}</span>
+                    {% elif item.status == "uptodate" %}
+                        <span title="Updated">{{ green_emoji }}</span>
+                    {% elif item.status == "error" %}
+                        <span title="Error">{{ red_emoji }}</span>
+                    {% elif item.status == "unable" %}
+                        <span title="Unable check">{{ yellow_emoji }}</span>
+                    {% else %}
+                        <span title="Unknown">{{ white_emoji }}</span>
+                    {% endif %}
+                </td>
+                <td data-label="Image"><span class="truncate-image">{{ item.image }}</span></td>
+                <td data-label="Digest"><span class="truncate-digest">{{ item.digest }}</span></td>
+                <td data-label="Size">{{ item.size }}</td>
+                <td data-label="Created">{{ item.created }}</td>
+            </tr>
+        {% endfor %}
+</tbody>
+
     </table>
     <div class="log-section">
         <h1>{{ white_emoji }} Execution Logs</h1>
@@ -69,12 +73,8 @@
                     const parser = new DOMParser();
                     const doc = parser.parseFromString(html, 'text/html');
                     const newTable = doc.querySelector('#dockerTable');
-                    const newHeader = doc.querySelector('h1');
                     if (newTable && document.querySelector('#dockerTable')) {
                         document.querySelector('#dockerTable').outerHTML = newTable.outerHTML;
-                    }
-                    if (newHeader && document.querySelector('h1')) {
-                        document.querySelector('h1').outerHTML = newHeader.outerHTML;
                     }
                 })
                 .catch(error => console.error('Error refreshing page:', error));
