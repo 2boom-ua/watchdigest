@@ -2,7 +2,7 @@
     <img src="https://github.com/2boom-ua/watchdigest/blob/main/static/mstile-144x144.png?raw=true" alt="" width="124" height="124">
 </div>
 
-## Docker monitoring tool that tracks Docker image updates
+## Monitor Docker images for outdated digests and send notifications to various platforms when updates are available.
 
 WatchDigest is a Python-based monitoring tool that scans local Docker containers, checks whether their images are outdated, and optionally updates those images. It can notify you across a wide range of messaging platforms when updates are available or have been applied.
 
