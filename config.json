@@ -22,7 +22,10 @@
             "...."
         ]
     },
-    "STARTUP_MESSAGE": true,
+    "NOTIFY_ENABLED": true,
+    "STARTUP_MESSAGE": false,
     "DEFAULT_DOT_STYLE": true,
-    "MIN_REPEAT": 45
+    "UPGRADE_MODE": true,
+    "START_TIMES": ["06:00", "14:00", "22:00"],
+    "COMPOSE_FILES": ["compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"]
 }
