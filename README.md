@@ -1,3 +1,4 @@
+![Project Preview](https://github.com/2boom-ua/watchdigest/blob/main/screenshot.png?raw=true)
 <div align="center">  
     <img src="https://github.com/2boom-ua/watchdigest/blob/main/screenshot.png?raw=true" alt="" width="821" height="423">
 </div>
