@@ -18,7 +18,7 @@ import threading
 from typing import List, Dict
 from schedule import every, repeat, run_pending
 from collections import deque
-from docker.errors import DockerException
+from docker.errors import APIError, NotFound, DockerException
 from urllib.parse import urlparse
 from datetime import datetime, time as dtime, timedelta
 from flask import Flask, render_template, jsonify, request, Response
@@ -455,126 +455,206 @@ def get_outdated_digests_list():
 
 
 def pull_and_restart_outdated_images():
-    """Pull updated images, restart containers, and remove unused images."""
+    """Pull updated images, restart containers, then remove unused images."""
     def find_compose_file(working_dir):
         try:
             if not os.path.isdir(working_dir):
                 logger.error(f"Directory {working_dir} does not exist.")
                 return None
 
-            dir_contents = os.listdir(working_dir)
             for compose_file in compose_files:
-                if compose_file in dir_contents:
+                if compose_file in os.listdir(working_dir):
                     return os.path.join(working_dir, compose_file)
 
             logger.info(f"No valid compose file found in {working_dir}.")
             return None
-
-        except FileNotFoundError:
-            logger.error(f"Directory {working_dir} does not exist.")
-            return None
-        except PermissionError:
-            logger.error(f"Permission denied accessing {working_dir}.")
+        except (FileNotFoundError, PermissionError) as e:
+            logger.error(f"Error accessing {working_dir}: {e}")
             return None
 
     def get_compose_command():
-        """Determine whether to use 'docker compose' (v2) or 'docker-compose' (v1)"""
-        try:
-            subprocess.run(
-                ["docker", "compose", "version"],
-                capture_output=True,
-                check=True
-            )
-            return ["docker", "compose"]
-        except FileNotFoundError:
-            logger.error("'docker' command not found in PATH.")
-        except subprocess.CalledProcessError as e:
-            logger.error(f"'docker compose' exists but failed: {e.stderr.decode().strip()}")
+        commands = [
+            (["docker", "compose", "version"], ["docker", "compose"]),
+            (["docker-compose", "version"], ["docker-compose"])
+        ]
+        for check_cmd, return_cmd in commands:
+            try:
+                subprocess.run(check_cmd, capture_output=True, check=True)
+                return return_cmd
+            except (FileNotFoundError, subprocess.CalledProcessError):
+                logger.warning(f"Command not usable: {' '.join(check_cmd)}")
+        logger.error("No working Docker Compose command found.")
+        raise RuntimeError("Docker Compose is not installed or functional.")
+        
+    def wait_for_image_pull(docker_client, image_ids, timeout=30, post_wait=20):
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            try:
+                for image_id in image_ids:
+                    docker_client.images.get(image_id)
+                time.sleep(post_wait)
+                return True
+            except docker.errors.ImageNotFound:
+                time.sleep(2)
+        logger.warning("Some images were not pulled in time.")
+        time.sleep(post_wait)
+        return False
+        
+    def wait_for_containers(docker_client, target_ids, timeout=30, post_wait=20):
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            running_ids = {c.image.id for c in docker_client.containers.list(all=True)}
+            if target_ids.issubset(running_ids):
+                time.sleep(post_wait)
+                return True
+            time.sleep(2)
+        logger.warning("Some containers did not come back online in time.")
+        time.sleep(post_wait)
+        return False
 
-        try:
-            subprocess.run(
-                ["docker-compose", "version"],
-                capture_output=True,
-                check=True
-            )
-            return ["docker-compose"]
-        except FileNotFoundError:
-            logger.error("'docker-compose' command not found in PATH.")
-        except subprocess.CalledProcessError as e:
-            logger.error(f"'docker-compose' exists but failed: {e.stderr.decode().strip()}")
-
-        logger.error("Neither 'docker compose' (v2) nor 'docker-compose' (v1) is installed or functional.")
-        raise RuntimeError("Neither 'docker compose' (v2) nor 'docker-compose' (v1) is installed.")
+    def wait_for_image_removal(docker_client, image_ids, timeout=30, post_wait=20):
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            current_ids = {img.id for img in docker_client.images.list()}
+            if not image_ids.intersection(current_ids):
+                time.sleep(post_wait)
+                return True
+            time.sleep(2)
+        logger.warning("Some images were not removed in time.")
+        time.sleep(post_wait)
+        return False
 
     try:
         docker_client = docker.DockerClient(base_url=platform_base_url, version="auto")
-        outdated = list_of_outdated_images
-
         used_images_before = {c.image.id for c in docker_client.containers.list(all=True)}
 
-        successful_pulls = set()
-        for entry in outdated:
-            image = entry["image"]
-            logger.info(f"Pulling updated image for: {image}.")
-            try:
-                docker_client.images.pull(image)
-                logger.info(f"Successfully pulled: {image}.")
-                successful_pulls.add(image)
-            except docker.errors.APIError as e:
-                logger.error(f"Failed to pull {image}: {e}.")
-            time.sleep(10)
+        updated_images = ""
+        updated_errors = ""
 
-        for entry in outdated:
+        for entry in list_of_outdated_images:
             image = entry["image"]
             container_name = entry["container_name"]
-            
-            if image not in successful_pulls:
-                logger.info(f"Skipping container {container_name} - image {image} was not successfully pulled!")
+            parts = image.split('/')
+            image_name = f"{parts[1]}/{parts[2]}" if len(parts) == 3 else image
+
+            logger.info(f"Pulling updated image: {image}")
+            try:
+                pulled_image = docker_client.images.pull(image)
+                logger.info(f"Pulled: {image}")
+            except docker.errors.APIError as e:
+                logger.error(f"Failed to pull {image}: {e}")
+                updated_errors += f"{red_dot} Failed to pull {image}: {e}\n"
                 continue
 
-            container = docker_client.containers.get(container_name)
+            wait_for_image_pull(docker_client, {pulled_image.id})
+
+            try:
+                container = docker_client.containers.get(container_name)
+            except docker.errors.NotFound:
+                logger.error(f"Container {container_name} not found.")
+                updated_errors += f"{red_dot} Container {container_name} not found.\n"
+                continue
+
             working_dir = container.attrs['Config']['Labels'].get('com.docker.compose.project.working_dir')
 
             if working_dir:
                 compose_file_name = find_compose_file(working_dir)
-                compose_cmd = get_compose_command()
-                logger.info(f"Restarting container {container_name} using docker compose in {working_dir}{compose_file_name}.")
+                if not compose_file_name:
+                    updated_errors += f"{red_dot} Compose file not found for {container_name}.\n"
+                    continue
+
+                logger.info(f"Restarting container {container_name} using docker compose in {working_dir}.")
                 try:
-                    subprocess.run(
-                        compose_cmd + ["-f", compose_file_name, "up", "-d", container_name],
+                    compose_cmd = get_compose_command()
+                    compose_args = ["-f", compose_file_name, "up", "-d"]
+
+                    if not image.startswith("library/"):
+                        compose_args.append(container_name)
+
+                    full_cmd = compose_cmd + compose_args
+
+                    result = subprocess.run(
+                        full_cmd,
                         cwd=working_dir,
-                        check=True,
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL
                     )
+
+                    if result.returncode != 0:
+                        result = subprocess.run(
+                            compose_cmd + ["-f", compose_file_name, "up", "-d"],
+                            cwd=working_dir,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL
+                        )
+
+                    if result.returncode == 0:
+                        updated_images += f"{green_dot} *{image_name}* updated!\n"
+                    else:
+                        logger.error(f"Retry also failed for {container_name}, return code: {result.returncode}")
+                        updated_errors += f"{red_dot} Retry failed to restart {container_name} (code: {result.returncode})\n"
+
                 except subprocess.CalledProcessError as e:
-                    logger.error(f"Failed to restart using docker compose in {working_dir}: {e}.")
+                    logger.error(f"Failed to restart {container_name} via compose: {e}")
+                    updated_errors += f"{red_dot} Failed to restart {container_name} via compose: {e}\n"
+
             else:
-                logger.info(f"Restarting container {container_name} using Docker SDK.")
                 try:
+                    config = container.attrs['Config']
+                    host_config = container.attrs['HostConfig']
+                    networking_config = container.attrs.get('NetworkSettings', {}).get('Networks', {})
+
                     container.stop()
                     container.remove()
-                    docker_client.containers.run(image, name=container_name, detach=True)
-                except docker.errors.APIError as e:
-                    logger.error(f"Failed to restart {container_name}: {e}.")
 
-        used_images_after = {c.image.id for c in docker_client.containers.list(all=True)}
+                    network_name = next(iter(networking_config.keys()), None)
+
+                    docker_client.containers.run(
+                        image=image,
+                        name=container_name,
+                        detach=True,
+                        environment=config.get('Env'),
+                        ports={p.split("/")[0]: int(b[0]['HostPort']) for p, b in host_config.get('PortBindings', {}).items()} if host_config.get('PortBindings') else None,
+                        volumes=host_config.get('Binds'),
+                        command=config.get('Cmd'),
+                        entrypoint=config.get('Entrypoint'),
+                        labels=config.get('Labels'),
+                        restart_policy=host_config.get('RestartPolicy'),
+                        network=network_name
+                    )
+
+                    logger.info(f"Restarted container {container_name} with preserved configuration.")
+                    updated_images += f"{green_dot} *{image_name}* updated!\n"
+
+                except docker.errors.APIError as e:
+                    logger.error(f"Failed to restart {container_name}: {e}")
+                    updated_errors += f"{red_dot} Failed to restart {container_name}: {e}\n"
+
+        used_images_after = {c.image.id for c in docker_client.containers.list(all=True)}       
+        wait_for_containers(docker_client, used_images_after)
+
         unused_images = used_images_before - used_images_after
 
         for image_id in unused_images:
             try:
                 docker_client.images.remove(image_id)
-                logger.info(f"Removed unused image: {image_id}.")
+                logger.info(f"Removed unused image: {image_id}")
             except docker.errors.APIError as e:
-                logger.warning(f"Failed to remove image {image_id}: {e}.")
-        time.sleep(10)
+                logger.error(f"Failed to remove image {image_id}: {e}")
+                updated_errors += f"Failed to remove image {image_id}: {e}\n"
+
+        wait_for_image_removal(docker_client, unused_images)
+        
+        if notify_enabled and (updated_images or updated_errors):
+            send_message(f"{header_message}{updated_images}{updated_errors}")
 
     except DockerException as e:
-        logger.error(f"Error in updating and restarting containers: {e}.")
+        logger.error(f"Error in updating and restarting containers: {e}")
 
 
 def maintain_container_images():
     logger.info("Checking for outdated container images that need upgrading...")
+
     global list_of_outdated_images
     next_run_time = get_next_start_time(start_times)
     time_start = datetime.now()
@@ -583,17 +663,20 @@ def maintain_container_images():
     if list_of_outdated_images:
         # logger.info("Simulating image pull and container restart...")
         pull_and_restart_outdated_images()
-
+    
     get_outdated_digests_list()
+
     time_end = datetime.now()
     elapsed = time_end - time_start
     minutes, seconds = divmod(elapsed.total_seconds(), 60)
+
     logger.info(f"Image upgrade check completed in {int(minutes):02d}:{int(seconds):02d}.")
     logger.info(f"Next scheduled image upgrade check: {next_run_time}.")
 
 
 def checkonly_container_images():
     logger.info("Checking for outdated container images (no actions will be taken)...")
+
     start_times_outdate_check = get_starts_check_times(start_times, upgrade_mode)
     next_run_time = get_next_start_time(start_times_outdate_check)
     time_start = datetime.now()
@@ -603,6 +686,7 @@ def checkonly_container_images():
     time_end = datetime.now()
     elapsed = time_end - time_start
     minutes, seconds = divmod(elapsed.total_seconds(), 60)
+
     logger.info(f"Outdated image check completed in {int(minutes):02d}:{int(seconds):02d}.")
     logger.info(f"Next scheduled outdated image check: {next_run_time}.")
 
@@ -651,6 +735,7 @@ def get_starts_check_times(start_times, upgrade_mode=True):
         all_times.extend([new_time_decrease, new_time_increase])
 
         add_additional = True
+
         for prev_time in all_times:
             time_diff = abs((additional_time - prev_time).total_seconds() / 60)
             if time_diff < timeshift_minutes:
@@ -699,7 +784,7 @@ def display_docker_data():
         temp = data.copy()
         if isinstance(temp["container_name"], list):
             temp["container_name"] = ", ".join(temp["container_name"])
-        temp["image"] = temp["image"].replace("docker.io/", "").replace("local/", "")
+        temp["image"] = temp["image"].replace("docker.io/", "").replace("local/", "").replace("library/", "")
         display_data.append(temp)
 
     return render_template(
@@ -730,7 +815,7 @@ def run_flask():
 
 if __name__ == "__main__":
     """Initialize and start monitoring."""
-    logger.info("Starting container image monitor...")
+    logger.info(f"Starting container image monitor...")
 
     config_file = os.path.join(os.path.dirname(os.path.realpath(__file__)), "config.json")
     file_db = os.path.join(os.path.dirname(os.path.realpath(__file__)), "data.db")
@@ -744,7 +829,7 @@ if __name__ == "__main__":
     square_dots = {"orange": "\U0001F7E7", "green": "\U0001F7E9", "red": "\U0001F7E5", "yellow": "\U0001F7E8", "white": "\U0001F533"}
 
     docker_info = get_docker_engine_info()
-    node_name = docker_info.get("docker_engine_name", "Unknown")
+    node_name = docker_info.get('docker_engine_name', 'N/A')
     monitoring_message = ""
     compose_version = get_compose_version()
 
@@ -776,9 +861,9 @@ if __name__ == "__main__":
             start_times = config_json.get("START_TIMES", default_start_times)
             compose_files = config_json.get("COMPOSE_FILES", default_compose_files)
         except (json.JSONDecodeError, ValueError, TypeError, KeyError) as e:
-            logger.error(f"Error reading or parsing config.json: {e}. Using default times.")
+            logger.error(f"Failed to read or parse config.json: {e}. Falling back to default settings.")
     else:
-        logger.error("config.json not found. Using default times.")
+        logger.error(f"Configuration file 'config.json' not found. Falling back to default settings.")
 
     if not notify_enabled:
         startup_message = False
@@ -827,7 +912,7 @@ if __name__ == "__main__":
     except ValueError as e:
         start_times_outdate_check = get_starts_check_times(default_start_times, upgrade_mode)
         logger.error(f"Error: {e}")
-        logger.warning(f"Invalid start time settings in config.json. Using default values: {start_times}. Please update the configuration.")
+        logger.warning(f"Invalid start time settings in config.json. Falling back to default settings: {start_times}. Please update the configuration file.")
 
     checkonly_container_images()
 
