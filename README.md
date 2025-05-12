@@ -3,35 +3,24 @@
     <img src="https://github.com/2boom-ua/watchdigest/blob/main/screenshot.png?raw=true" alt="" width="821" height="423">
 </div>
 
-## Monitor Docker images for outdated digests and send notifications to various platforms when updates are available.
+## WatchDigest
 
-WatchDigest is a Python-based monitoring tool that scans local Docker containers, checks whether their images are outdated, and optionally updates those images. It can notify you across a wide range of messaging platforms when updates are available or have been applied.
+**WatchDigest** is a lightweight Python-based tool that monitors your Docker containers for outdated image digests and optionally updates them. It can notify you across various messaging platforms when updates are available or have been applied.
 
-### Features:
-Supports multiple container registries (docker.io, ghcr.io, lscr.io, registry.gitlab.com, etc.).
-Automated digest checking to detect outdated images.
-Optionally auto-update outdated Docker images and restart containers.
-Webhook-based notifications (supports multiple messaging platforms).
-Configurable polling period via config.json.
-Docker API integration to retrieve local image data.
+### Features
 
-- **Real-time notifications with support for multiple accounts** via:
-  - Telegram
-  - Discord
-  - Slack
-  - Gotify
-  - Ntfy
-  - Pushbullet
-  - Pushover
-  - Rocket.chat
-  - Matrix
-  - Mattermost
-  - Zulip
-  - Pumble
-  - Flock
-  - Apprise
-  - Webntfy
-  - Custom
+- Scans local Docker containers and checks if images are outdated
+- Compares image digests with those from registries like Docker Hub, GitHub Container Registry, GitLab, etc.
+- Optionally pulls and upgrades containers with the latest image
+- Sends notifications to:
+  - Telegram, Discord, Gotify, Ntfy
+  - Pushbullet, Pushover, Slack
+  - Matrix, Mattermost, Pumble
+  - Rocket.Chat, Zulip, Flock, Custom
+  - Any Apprise-compatible endpoint
+  - Includes a simple web interface (Flask) to view container status and logs
+  - Configurable check and update schedule
+  - Designed to run as a Linux service or Docker container.
 
 - **Customizable polling interval** through a configuration file (`config.json`).
 
