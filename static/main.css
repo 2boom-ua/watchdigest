@@ -122,11 +122,11 @@ td span[title] {
     cursor: pointer;
 }
 
-.truncate-digest, .truncate-image {
+.nowrap-size, .nowrap-created, .nowrap-image, .nowrap-digest, .nowrap-container{
+    max-width: 100%;
+    width: 100%;
     display: inline-block;
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
 }
 
 .log-section {
