@@ -28,7 +28,7 @@
         {% for item in data %}
             <tr>
                 <td data-label="Count">{{ item.count }}</td>
-                <td data-label="Container Name">{{ item.container_name }}</td>
+                <td data-label="Container Name"><span class="nowrap-container">{{ item.container_name }}</span></td>
                 <td data-label="Status">
                     {% if item.status == "outdated" %}
                         <span title="Outdated">{{ orange_emoji }}</span>
@@ -42,10 +42,10 @@
                         <span title="Unknown">{{ white_emoji }}</span>
                     {% endif %}
                 </td>
-                <td data-label="Image"><span class="truncate-image">{{ item.image }}</span></td>
-                <td data-label="Digest"><span class="truncate-digest">{{ item.digest }}</span></td>
-                <td data-label="Size">{{ item.size }}</td>
-                <td data-label="Created">{{ item.created }}</td>
+                <td data-label="Image"><span class="nowrap-image">{{ item.image }}</span></td>
+                <td data-label="Digest"><span class="nowrap-digest">{{ item.digest }}</span></td>
+                <td data-label="Size"><span class="nowrap-size">{{ item.size }}</span></td>
+                <td data-label="Created"><span class="nowrap-created">{{ item.created }}</span></td>
             </tr>
         {% endfor %}
 </tbody>
