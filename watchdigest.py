@@ -25,6 +25,8 @@ from flask import Flask, render_template, jsonify, request, Response
 
 default_start_times = ["03:00", "15:00"]
 upgrade_mode = True
+notify_enabled = False
+default_dot_style = True
 default_compose_files = ['compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml']
 list_of_outdated_images = []
 start_times_outdate_check = []
