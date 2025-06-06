@@ -12,12 +12,13 @@
     <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
 </head>
 <body>
+    <h1>{{ header_string }}</h1>
     <table id="dockerTable">
         <thead>
             <tr>
                 <th>#</th>
                 <th>Container Name</th>
-                <th>{{ white_emoji }}</th>
+                <th><div class="white-round"></div></th>
                 <th>Image</th>
                 <th>Digest</th>
                 <th>Size</th>
@@ -31,15 +32,15 @@
                 <td data-label="Container Name"><span class="nowrap-container">{{ item.container_name }}</span></td>
                 <td data-label="Status">
                     {% if item.status == "outdated" %}
-                        <span title="Outdated">{{ orange_emoji }}</span>
+                        <div class="orange-round" title="Outdated"></div>
                     {% elif item.status == "uptodate" %}
-                        <span title="Updated">{{ green_emoji }}</span>
+                        <div class="green-round" title="Updated"></div>
                     {% elif item.status == "error" %}
-                        <span title="Error">{{ red_emoji }}</span>
+                        <div class="red-round" title="Error"></div>
                     {% elif item.status == "unable" %}
-                        <span title="Unable check">{{ yellow_emoji }}</span>
+                        <div class="yellow-round" title="Unable check"></div>
                     {% else %}
-                        <span title="Unknown">{{ white_emoji }}</span>
+                        <div class="white-round" title="Unknown"></div>
                     {% endif %}
                 </td>
                 <td data-label="Image"><span class="nowrap-image">{{ item.image }}</span></td>
@@ -52,15 +53,14 @@
 
     </table>
     <div class="log-section">
-        <h1>{{ white_emoji }} Execution Logs</h1>
         <div id="logContent"></div>
     </div>
     <div class="copyright">
+        <span>{{ foother_string }}</span>
         <span>Watchdigest, © 2boom, 2025</span>
     </div>
 
     <script>
-        // Refresh table every 30 seconds
         setInterval(function() {
             fetch('/')
                 .then(response => {
@@ -80,7 +80,6 @@
                 .catch(error => console.error('Error refreshing page:', error));
         }, 30000);
 
-        // Log fetching functionality
         let previousLogContent = '';
 
         function fetchLogs() {
@@ -105,9 +104,8 @@
                 });
         }
 
-        // Initial log fetch
         fetchLogs();
-        // Refresh logs every 5 seconds
+
         setInterval(fetchLogs, 5000);
     </script>
 </body>
