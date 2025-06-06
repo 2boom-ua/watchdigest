@@ -23,7 +23,7 @@ from urllib.parse import urlparse
 from datetime import datetime, time as dtime, timedelta
 from flask import Flask, render_template, jsonify, request, Response
 
-default_start_times = ["03:00", "15:00"]
+default_start_times = ["03:00"]
 upgrade_mode = True
 notify_enabled = False
 default_dot_style = True
@@ -94,9 +94,20 @@ def get_docker_engine_info() -> dict:
         return {"docker_engine_name": "", "docker_version": ""}
 
 
+def get_containerd_version():
+    """Returns the installed containerd version as a dictionary."""
+    try:
+        output = subprocess.check_output(["containerd", "--version"], text=True).strip()
+        parts = output.split()
+        version = parts[2] if len(parts) >= 3 else "N/A"
+        return {"containerd_version": version}
+    except Exception:
+        return {"containerd_version": "N/A"}
+        
+
+
 def get_compose_version() -> dict:
     """Return Docker Compose version as a dict: {'docker_compose_version': '<version>'}, or 'N/A' if not found."""
-
     def extract_version(output):
         for line in output.splitlines():
             if 'version' in line.lower():
@@ -207,6 +218,7 @@ def deduplicate_data(data):
 
 
 def get_non_dangling_images() -> List[Dict[str, str]]:
+    """Retrieves all non-dangling Docker images currently in use by containers."""
     global docker_image_data
 
     resource_data = []
@@ -441,7 +453,7 @@ def get_outdated_digests_list():
 
     if new_list and len(new_list) >= len(old_list):
         old_set = set(old_list)
-        result = [item for item in new_list if item not in old_set]  # no change logic and not rename values
+        result = [item for item in new_list if item not in old_set]
 
     old_list = new_list
 
@@ -454,7 +466,7 @@ def get_outdated_digests_list():
         if notify_enabled:
             send_message(f"{header_message}{''.join(result)}")
         for item in result:
-            logger.info(f"{str(item).replace(orange_dot, white_dot).replace('*', '').strip()}")
+            logger.info(f"{str(item).replace(orange_dot, 'Image: ').replace('*', '').strip()}")
             
 
 def pull_and_restart_outdated_images():
@@ -692,6 +704,7 @@ def pull_and_restart_outdated_images():
 
 
 def maintain_container_images():
+    """Checks for outdated container images, pulls updates, and restarts affected containers if needed."""
     logger.info("Checking for outdated container images that need upgrading...")
 
     global list_of_outdated_images
@@ -702,7 +715,7 @@ def maintain_container_images():
     if list_of_outdated_images:
         # logger.info("Simulating image pull and container restart...")
         pull_and_restart_outdated_images()
-    
+
     get_outdated_digests_list()
 
     time_end = datetime.now()
@@ -714,6 +727,7 @@ def maintain_container_images():
 
 
 def checkonly_container_images():
+    """Checks for outdated container images without performing updates or restarts."""
     logger.info("Checking for outdated container images (no actions will be taken)...")
 
     start_times_outdate_check = get_starts_check_times(start_times, upgrade_mode)
@@ -731,6 +745,7 @@ def checkonly_container_images():
 
 
 def get_next_start_time(start_times):
+    """Returns the next scheduled start time based on a list of 'HH:MM' time strings."""
     now = datetime.now()
     current_time = now.time()
 
@@ -750,59 +765,32 @@ def get_next_start_time(start_times):
     return datetime.combine(tomorrow, time_objects[0]).strftime("%Y-%m-%d %H:%M")
 
 
-def get_starts_check_times(start_times, upgrade_mode=True):
-    timeshift_minutes = 40
-    check_times = set()
-    parsed_times = [datetime.strptime(t, "%H:%M") for t in start_times]
-    parsed_times.sort()
-
-    for i in range(1, len(parsed_times)):
-        time_diff = (parsed_times[i] - parsed_times[i-1]).total_seconds() / 60
-        if time_diff < timeshift_minutes:
-            raise ValueError(f"Start times {parsed_times[i-1].strftime('%H:%M')} and "
-                           f"{parsed_times[i].strftime('%H:%M')} are less than "
-                           f"{timeshift_minutes} minutes apart")
-
-    all_times = []
-    for i, start in enumerate(parsed_times):
-        new_time_decrease = start - timedelta(minutes=timeshift_minutes)
-        new_time_increase = start + timedelta(minutes=timeshift_minutes)
-        additional_time = start - timedelta(minutes=timeshift_minutes * 2)
-
-        check_times.add(new_time_decrease.strftime("%H:%M"))
-        check_times.add(new_time_increase.strftime("%H:%M"))
-        all_times.extend([new_time_decrease, new_time_increase])
-
-        add_additional = True
-
-        for prev_time in all_times:
-            time_diff = abs((additional_time - prev_time).total_seconds() / 60)
-            if time_diff < timeshift_minutes:
-                add_additional = False
-                break
-
-        if add_additional:
-            check_times.add(additional_time.strftime("%H:%M"))
-            all_times.append(additional_time)
-
-        if not upgrade_mode:
-            all_times.append(start)
-
+def get_starts_check_times(start_times, upgrade_mode):
+    """Generate hourly times, skipping the nearest hour for each time in start_times."""
     if not upgrade_mode:
-        for start in parsed_times:
-            check_times.add(start.strftime("%H:%M"))
-            if start not in all_times:
-                all_times.append(start)
+        start_times = []
+        
+    if not isinstance(start_times, list):
+        raise TypeError("start_times must be a list")
 
-    all_times.sort()
-    for i in range(1, len(all_times)):
-        time_diff = (all_times[i] - all_times[i-1]).total_seconds() / 60
-        if time_diff < timeshift_minutes:
-            raise ValueError(f"Generated times {all_times[i-1].strftime('%H:%M')} and "
-                           f"{all_times[i].strftime('%H:%M')} are less than "
-                           f"{timeshift_minutes} minutes apart")
+    skip_hours = set()
 
-    return sorted(list(check_times))
+    for time_str in start_times:
+        if not isinstance(time_str, str):
+            raise TypeError(f"Invalid time format '{time_str}'. Expected string in 'HH:MM' format")
+        try:
+            hours, minutes = map(int, time_str.split(":"))
+            if not (0 <= hours <= 23 and 0 <= minutes <= 59):
+                raise ValueError
+        except ValueError:
+            raise ValueError(f"Invalid time format '{time_str}'. Expected 'HH:MM'")
+
+        if minutes <= 29:
+            skip_hours.add(hours)
+        elif minutes >= 31:
+            skip_hours.add((hours + 1) % 24)
+
+    return [f"{hour:02d}:00" for hour in range(24) if hour not in skip_hours]
 
 
 @app.route("/logs")
@@ -828,12 +816,9 @@ def display_docker_data():
 
     return render_template(
         'index.html',
+        header_string = h1_string,
+        foother_string=foother_string,
         data=display_data,
-        orange_emoji=orange_dot,
-        green_emoji=green_dot,
-        red_emoji=red_dot,
-        yellow_emoji=yellow_dot,
-        white_emoji=white_dot,
     )
 
 
@@ -868,17 +853,23 @@ if __name__ == "__main__":
     square_dots = {"orange": "\U0001F7E7", "green": "\U0001F7E9", "red": "\U0001F7E5", "yellow": "\U0001F7E8", "white": "\U0001F533"}
 
     docker_info = get_docker_engine_info()
-    node_name = docker_info.get('docker_engine_name', 'N/A')
-    monitoring_message = ""
     compose_version = get_compose_version()
+    node_name = docker_info.get('docker_engine_name', 'N/A')
+    docker_version = docker_info.get('docker_version', 'N/A')
+    docker_compose = compose_version.get('docker_compose_version', 'N/A')
+    containerd_version = get_containerd_version()
+    docker_containerd = containerd_version.get('containerd_version', 'N/A')
+    h1_string = f"Image Tracking: {node_name}"
+    foother_string = f"Docker Engine: {docker_version} | Containerd: {docker_containerd} | Compose plugin: {docker_compose}"
+    monitoring_message = ""
 
-    logger.info(f"docker engine: {docker_info.get('docker_version', 'N/A')}.")
-    logger.info(f"docker compose: {compose_version.get('docker_compose_version', 'N/A')}.")
+    logger.info(f"Docker Engine: {docker_version} | Containerd: {docker_containerd} | Compose Plugin: {docker_compose}.")
 
     header_message = (
         f"*{node_name}* (.digest)\n"
-        f"- docker engine: {docker_info.get('docker_version', 'N/A')},\n"
-        f"- docker compose: {compose_version.get('docker_compose_version', 'N/A')},\n"
+        f"- docker engine: {docker_version},\n"
+        f"- containerd: {docker_containerd},\n"
+        f"- compose plugin: {docker_compose},\n"
         f"- auto-upgrade mode: {'On' if upgrade_mode else 'Off'},\n"
     )
 
@@ -948,7 +939,7 @@ if __name__ == "__main__":
         if upgrade_mode:
             logger.info(f"Using check times for image upgrade: {', '.join(start_times)}.")
         logger.info(f"First scheduled image upgrade check: {get_next_start_time(start_times)}.")
-    except ValueError as e:
+    except (ValueError, TypeError) as e:
         start_times_outdate_check = get_starts_check_times(default_start_times, upgrade_mode)
         logger.error(f"Error: {e}")
         logger.warning(f"Invalid start time settings in config.json. Falling back to default settings: {start_times}. Please update the configuration file.")
