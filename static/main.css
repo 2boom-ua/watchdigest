@@ -16,6 +16,13 @@
     --warning: #FF6433; /* Orange */
     --error: #FF2337; /* Red */
     --secondary: #F8AE3C; /* Yellow */
+    --iyellow: #FFCD66;
+    --iwhite: #FCFCFC;
+    --igreen: #64B461;
+    --ired: #ff2337;
+    --iorange: #FF6433;
+    --iwhite: #F5F5F5;
+    --igrey: #CFCFCF;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -71,26 +78,54 @@ html {
     color: var(--color-scheme-text-color);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     line-height: 1.2;
-    width: 100%;
-    height: 100%;
-    margin: 0 auto;
+    margin: 0;
     display: flex;
-    justify-content: space-between;
+    justify-content: center;
 }
-
 body {
     margin: 5px 10px;
     font-size: 0.9em;
-    width: 100%;
-    position: relative;
+    max-width: 100%;
 }
 
 h1 {
     color: var(--mapp);
-    font-size: 0.95em;
-    font-weight: normal;
-    margin: 5px 0 8px 0;
+    font-size: 1em;
+    /*font-weight: normal;*/
+    margin: 5px 5px 8px;
 }
+
+.white-round {
+        width: 13px;
+        height: 13px;
+        background-color: var(--iwhite);
+        border-radius: 50%;
+        border: 1px solid var(--igrey);
+    }
+.red-round {
+        width: 14px;
+        height: 14px;
+        background-color:  var(--ired);
+        border-radius: 50%;
+    }
+.green-round {
+        width: 14px;
+        height: 14px;
+        background-color:  var(--igreen);
+        border-radius: 50%;
+    }
+.yellow-round {
+        width: 14px;
+        height: 14px;
+        background-color:  var(--iyellow);
+        border-radius: 50%;
+    }
+.orange-round {
+        width: 14px;
+        height: 14px;
+        background-color:  var(--iorange);
+        border-radius: 50%;
+    }
 
 table {
     width: 100%;
@@ -148,9 +183,8 @@ td span[title] {
 
 .copyright {
     display: flex;
-    justify-content: flex-end;
+    justify-content: space-between;
     align-items: center;
-    width: 100%;
     margin-top: 8px;
     padding-bottom: 10px;
 }
@@ -251,5 +285,15 @@ td span[title] {
         display: inline-block;
         width: auto;
         padding: 0 5px;
+    }
+}
+
+@media (max-width: 768px) {
+     td[data-label="Digest"] {
+       max-width: 94%;
+        width: 95%;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 }
