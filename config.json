@@ -7,14 +7,12 @@
             "...."
         ],
         "HEADER": [
-            {"first JSON structure"},
-            {"second JSON structure"},
-            "...."
+            {"first JSON": "structure"},
+            {"second JSON": "structure"}
         ],
         "PAYLOAD": [
-            {"first JSON structure"},
-            {"second JSON structure"},
-            "...."
+            {"first JSON": "structure"},
+            {"second JSON": "structure"}
         ],
         "FORMAT_MESSAGE": [
             "markdown",
@@ -26,6 +24,6 @@
     "STARTUP_MESSAGE": false,
     "DEFAULT_DOT_STYLE": true,
     "UPGRADE_MODE": true,
-    "START_TIMES": ["06:00", "14:00", "22:00"],
+    "START_TIMES": ["03:00"],
     "COMPOSE_FILES": ["compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"]
 }
