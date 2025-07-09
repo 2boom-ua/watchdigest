@@ -27,6 +27,7 @@ default_start_times = ["03:00"]
 upgrade_mode = True
 notify_enabled = False
 default_dot_style = True
+next_run_time, next_run_time_check = 'N/A', 'N/A'
 default_compose_files = ['compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml']
 list_of_outdated_images = []
 start_times_outdate_check = []
@@ -707,13 +708,11 @@ def maintain_container_images():
     """Checks for outdated container images, pulls updates, and restarts affected containers if needed."""
     logger.info("Checking for outdated container images that need upgrading...")
 
-    global list_of_outdated_images
-    next_run_time = get_next_start_time(start_times)
+    global list_of_outdated_images, next_run_time
     time_start = datetime.now()
 
     list_of_outdated_images = get_outdated_digests()
     if list_of_outdated_images:
-        # logger.info("Simulating image pull and container restart...")
         pull_and_restart_outdated_images()
 
     get_outdated_digests_list()
@@ -722,16 +721,17 @@ def maintain_container_images():
     elapsed = time_end - time_start
     minutes, seconds = divmod(elapsed.total_seconds(), 60)
 
+    next_run_time = get_next_start_time(start_times)
     logger.info(f"Image upgrade check completed in {int(minutes):02d}:{int(seconds):02d}.")
     logger.info(f"Next scheduled image upgrade check: {next_run_time}.")
 
 
 def checkonly_container_images():
     """Checks for outdated container images without performing updates or restarts."""
+    global next_run_time_check
     logger.info("Checking for outdated container images (no actions will be taken)...")
 
     start_times_outdate_check = get_starts_check_times(start_times, upgrade_mode)
-    next_run_time = get_next_start_time(start_times_outdate_check)
     time_start = datetime.now()
 
     get_outdated_digests_list()
@@ -739,9 +739,10 @@ def checkonly_container_images():
     time_end = datetime.now()
     elapsed = time_end - time_start
     minutes, seconds = divmod(elapsed.total_seconds(), 60)
-
+    
+    next_run_time_check = get_next_start_time(start_times_outdate_check)
     logger.info(f"Outdated image check completed in {int(minutes):02d}:{int(seconds):02d}.")
-    logger.info(f"Next scheduled outdated image check: {next_run_time}.")
+    logger.info(f"Next scheduled outdated image check: {next_run_time_check}.")
 
 
 def get_next_start_time(start_times):
@@ -816,8 +817,9 @@ def display_docker_data():
 
     return render_template(
         'index.html',
+        next_run_time = next_run_time,
+        next_run_time_check = next_run_time_check,
         header_string = h1_string,
-        foother_string=foother_string,
         data=display_data,
     )
 
@@ -860,7 +862,6 @@ if __name__ == "__main__":
     containerd_version = get_containerd_version()
     docker_containerd = containerd_version.get('containerd_version', 'N/A')
     h1_string = f"Image Tracking: {node_name}"
-    foother_string = f"Docker Engine: {docker_version} | Containerd: {docker_containerd} | Compose plugin: {docker_compose}"
     monitoring_message = ""
 
     logger.info(f"Docker Engine: {docker_version} | Containerd: {docker_containerd} | Compose Plugin: {docker_compose}.")
@@ -938,7 +939,9 @@ if __name__ == "__main__":
         start_times_outdate_check = get_starts_check_times(start_times, upgrade_mode)
         if upgrade_mode:
             logger.info(f"Using check times for image upgrade: {', '.join(start_times)}.")
-        logger.info(f"First scheduled image upgrade check: {get_next_start_time(start_times)}.")
+        next_run_time_check = get_next_start_time(start_times)
+        next_run_time = get_next_start_time(start_times)
+        logger.info(f"First scheduled image upgrade check: {next_run_time_check}.")
     except (ValueError, TypeError) as e:
         start_times_outdate_check = get_starts_check_times(default_start_times, upgrade_mode)
         logger.error(f"Error: {e}")
