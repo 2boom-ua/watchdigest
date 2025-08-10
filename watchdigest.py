@@ -826,19 +826,22 @@ def display_docker_data():
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    """Health check endpoint with Docker status check."""
+    """Сheck if watchdigest container are running."""
     try:
-        docker_status = subprocess.run(["docker", "info"], stdout=subprocess.PIPE, stderr=subprocess.PIPE,text=True)
+        result = subprocess.run(["docker", "ps", "--filter", "name=watchdigest", "--quiet"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
-        if docker_status.returncode != 0:
-            logger.error(f"Docker check failed: {docker_status.stderr.strip()}")
-            return jsonify({"status": "error", "docker": "unhealthy", "message": docker_status.stderr.strip()}), 500
+        if result.returncode != 0:
+            return jsonify({"status": "error", "message": result.stderr.strip()}), 500
 
-        return jsonify({"status": "healthy", "docker": "running"}), 200
+        running = bool(result.stdout.strip())
+
+        return jsonify({
+            "status": "healthy" if running else "error",
+            "watchdigest": "running" if running else "not running"
+        }), 200 if running else 500
 
     except Exception as e:
-        logger.exception("Health check failed")
-        return jsonify({"status": "error", "docker": "unknown", "message": str(e)}), 500
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 def run_flask():
