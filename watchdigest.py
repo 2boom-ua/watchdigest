@@ -796,11 +796,11 @@ def get_starts_check_times(start_times, upgrade_mode):
 
 @app.route("/logs")
 def stream_logs():
-    """Stream the last log records."""
+    """Stream the last log records in HTML format."""
     def generate():
         for line in limited_handler.get_logs():
-            yield f"{line}<br>"
-    return Response(generate(), mimetype="text/html")
+            yield f"{line}<br/>"
+    return Response(generate(), mimetype="text/html; charset=utf-8")
 
 
 @app.route('/')
@@ -826,12 +826,19 @@ def display_docker_data():
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    """Health check endpoint."""
+    """Health check endpoint with Docker status check."""
     try:
-        return jsonify({"status": "healthy"}), 200
+        docker_status = subprocess.run(["docker", "info"], stdout=subprocess.PIPE, stderr=subprocess.PIPE,text=True)
+
+        if docker_status.returncode != 0:
+            logger.error(f"Docker check failed: {docker_status.stderr.strip()}")
+            return jsonify({"status": "error", "docker": "unhealthy", "message": docker_status.stderr.strip()}), 500
+
+        return jsonify({"status": "healthy", "docker": "running"}), 200
+
     except Exception as e:
-        logger.error(f"Health check failed: {e}.")
-        return jsonify({"status": "error", "message": str(e)}), 500
+        logger.exception("Health check failed")
+        return jsonify({"status": "error", "docker": "unknown", "message": str(e)}), 500
 
 
 def run_flask():
