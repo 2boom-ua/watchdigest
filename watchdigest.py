@@ -693,7 +693,7 @@ def pull_and_restart_outdated_images():
                 logger.info(f"Removed unused image: {image_id}")
             except docker.errors.APIError as e:
                 logger.error(f"Failed to remove image {image_id}: {e}")
-                updated_errors += f"Failed to remove image {image_id}: {e}\n"
+                updated_errors += f"{red_dot} Failed to remove image {image_id}: {e}\n"
 
         wait_for_image_removal(docker_client, unused_images)
 
