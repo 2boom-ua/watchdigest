@@ -8,7 +8,6 @@
 **WatchDigest** is a lightweight Python-based tool that monitors your Docker containers for outdated image digests and optionally updates them. It can notify you across various messaging platforms when updates are available or have been applied.
 
 ### Features
-
 - Scans local Docker containers and checks if images are outdated
 - Compares image digests with those from registries like Docker Hub, GitHub Container Registry, GitLab, etc.
 - Optionally pulls and upgrades containers with the latest image
@@ -25,10 +24,13 @@
 - **Customizable polling interval** through a configuration file (`config.json`).
 
 ### Requirements
-
 - Python 3.X or higher
 - Docker installed and running
 - Dependencies: `docker`, `requests`, `schedule`, `Flask`
+
+### View
+**https://your_domain_name or http://server_ip:5151**
+
 ---
 
 ### Edit config.json:
@@ -142,7 +144,6 @@ docker-compose up -d
 You can set this script to run as a Linux service for continuous monitoring.
 
 ### Install required Python packages:
-
 ```
 pip install -r requirements.txt
 ```
@@ -177,15 +178,9 @@ systemctl enable watchdigest.service
 ```
 systemctl start watchdigest.service
 ```
-### View
-
-**https://your_domain_name or http://server_ip:5151**
-
 ### License
-
 This project is licensed under the MIT License - see the [MIT License](https://opensource.org/licenses/MIT) for details.
 
 ### Author
-
 - **2boom** - [GitHub](https://github.com/2boom-ua)
 
