@@ -92,7 +92,7 @@ def get_docker_engine_info() -> dict:
         }
     except (DockerException, Exception) as e:
         logger.error(f"Error fetching Docker info: {e}.")
-        return {"docker_engine_name": "", "docker_version": ""}
+        return {"docker_engine_name": "N/A", "docker_version": "N/A"}
 
 
 def get_containerd_version():
@@ -969,3 +969,4 @@ if __name__ == "__main__":
     while True:
         schedule.run_pending()
         time.sleep(60)
+
