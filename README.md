@@ -1,6 +1,6 @@
 
 <div align="center">  
-    <img src="https://github.com/2boom-ua/watchdigest/blob/main/screenshot.png?raw=true" alt="" width="800" height="531">
+    <img src="https://github.com/2boom-ua/watchdigest/blob/main/screenshot.png?raw=true" alt="" width="800" height="268">
 </div>
 
 *The idea for this software was inspired by* [containrrr/watchtower]([https://github.com/petersem/monocker](https://github.com/containrrr/watchtower))
