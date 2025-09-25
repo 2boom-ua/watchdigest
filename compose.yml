@@ -11,5 +11,5 @@ services:
       - /opt:/opt
     environment:
       - TZ=UTC
-    restart: always
+    restart: unless-stopped
 
