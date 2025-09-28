@@ -104,7 +104,6 @@ def get_containerd_version():
         return {"containerd_version": version}
     except Exception:
         return {"containerd_version": "N/A"}
-        
 
 
 def get_compose_version() -> dict:
@@ -164,18 +163,20 @@ def send_message(message: str):
         return message.replace("\n", "<br>")
 
     def to_markdown_format(message: str, markdown_type: str) -> str:
-        """Format message based on specified type."""
-        if markdown_type == "html":
-            return to_html_format(message)
-        elif markdown_type == "markdown":
-            return message.replace("*", "**")
-        elif markdown_type == "text":
-            return message.replace("*", "")
-        elif markdown_type == "simplified":
-            return message
-        else:
-            logger.error(f"Unknown format '{markdown_type}'. Returning original message.")
-            return message
+        """Format a message according to the specified markdown type."""
+        formatters = {
+            "html": lambda msg: to_html_format(msg),
+            "markdown": lambda msg: msg.replace("*", "**"),
+            "text": lambda msg: msg.replace("*", ""),
+            "simplified": lambda msg: msg,
+        }
+    
+        formatter = formatters.get(markdown_type)
+        if formatter:
+            return formatter(message)
+    
+        logger.error(f"Unknown format '{markdown_type}'. Returning original message.")
+        return message
 
     for url, header, payload, format_message in zip(platform_webhook_url, platform_header, platform_payload, platform_format_message):
         data, ntfy = None, False
@@ -901,40 +902,39 @@ if __name__ == "__main__":
             upgrade_mode = config_json.get("UPGRADE_MODE", True)
             start_times = config_json.get("START_TIMES", default_start_times)
             compose_files = config_json.get("COMPOSE_FILES", default_compose_files)
+            if not notify_enabled:
+                startup_message = False
+            
+            no_messaging_keys = ["STARTUP_MESSAGE", "NOTIFY_ENABLED", "DEFAULT_DOT_STYLE", "UPGRADE_MODE", "START_TIMES", "COMPOSE_FILES"]
+            if notify_enabled:
+                messaging_platforms = list(set(config_json) - set(no_messaging_keys))
+                for platform in messaging_platforms:
+                    if config_json[platform].get("ENABLED", False):
+                        for key, value in config_json[platform].items():
+                            platform_key = f"platform_{key.lower()}"
+                            if platform_key in globals():
+                                globals()[platform_key] = (globals()[platform_key] if isinstance(globals()[platform_key], list) else [globals()[platform_key]])
+                                globals()[platform_key].extend(value if isinstance(value, list) else [value])
+                            else:
+                                globals()[platform_key] = value if isinstance(value, list) else [value]
+                        monitoring_message += f"- messaging: {platform.lower().capitalize()},\n"
+                monitoring_message = "\n".join([*sorted(monitoring_message.splitlines()), ""])
+                monitoring_message += (
+                    f"- startup message: {'On' if startup_message else 'Off'},\n"
+                    f"- dot style: {'Round' if default_dot_style else 'Square'}.\n"
+                )
+        
+                if all(value in globals() for value in ["platform_webhook_url", "platform_header", "platform_payload", "platform_format_message"]):
+                    if startup_message:
+                        send_message(f"{header_message}{monitoring_message}")
         except (json.JSONDecodeError, ValueError, TypeError, KeyError) as e:
             logger.error(f"Failed to read or parse config.json: {e}. Falling back to default settings.")
     else:
         logger.error(f"Configuration file 'config.json' not found. Falling back to default settings.")
 
-    if not notify_enabled:
-        startup_message = False
-
     if not default_dot_style:
         dots = square_dots
     orange_dot, green_dot, red_dot, yellow_dot, white_dot = dots.values()
-
-    no_messaging_keys = ["STARTUP_MESSAGE", "NOTIFY_ENABLED", "DEFAULT_DOT_STYLE", "UPGRADE_MODE", "START_TIMES", "COMPOSE_FILES"]
-    if notify_enabled:
-        messaging_platforms = list(set(config_json) - set(no_messaging_keys))
-        for platform in messaging_platforms:
-            if config_json[platform].get("ENABLED", False):
-                for key, value in config_json[platform].items():
-                    platform_key = f"platform_{key.lower()}"
-                    if platform_key in globals():
-                        globals()[platform_key] = (globals()[platform_key] if isinstance(globals()[platform_key], list) else [globals()[platform_key]])
-                        globals()[platform_key].extend(value if isinstance(value, list) else [value])
-                    else:
-                        globals()[platform_key] = value if isinstance(value, list) else [value]
-                monitoring_message += f"- messaging: {platform.lower().capitalize()},\n"
-        monitoring_message = "\n".join([*sorted(monitoring_message.splitlines()), ""])
-        monitoring_message += (
-            f"- startup message: {'On' if startup_message else 'Off'},\n"
-            f"- dot style: {'Round' if default_dot_style else 'Square'}.\n"
-        )
-
-        if all(value in globals() for value in ["platform_webhook_url", "platform_header", "platform_payload", "platform_format_message"]):
-            if startup_message:
-                send_message(f"{header_message}{monitoring_message}")
 
     header_message = header_message.split('\n')[0]
     header_message = f"{header_message}\n"
@@ -969,4 +969,3 @@ if __name__ == "__main__":
     while True:
         schedule.run_pending()
         time.sleep(60)
-
