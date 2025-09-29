@@ -99,36 +99,36 @@ h1 {
 }
 
 .white-round {
-        width: 14px;
-        height: 14px;
+        width: 13px;
+        height: 13px;
         background-color: var(--bgwhite);
         border-radius: 50%;
         border: 1px solid var(--bggrey);
     }
 .red-round {
-        width: 13px;
-        height: 13px;
+        width: 12px;
+        height: 12px;
         background-color:  var(--bgred);
         border-radius: 50%;
         border: 1px solid var(--bbred);
     }
 .green-round {
-        width: 13px;
-        height: 13px;
+        width: 12px;
+        height: 12px;
         background-color:  var(--bggreen);
         border-radius: 50%;
         border: 1px solid var(--bbgreen);
     }
 .yellow-round {
-        width: 13px;
-        height: 13px;
+        width: 12px;
+        height: 12px;
         background-color:  var(--bgyellow);
         border-radius: 50%;
         border: 1px solid var(--bbyellow);
     }
 .orange-round {
-        width: 13px;
-        height: 13px;
+        width: 12px;
+        height: 12px;
         background-color:  var(--bgorange);
         border-radius: 50%;
         border: 1px solid var(--bborange);
