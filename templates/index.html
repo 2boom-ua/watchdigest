@@ -4,111 +4,116 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="msapplication-TileImage" content="{{ url_for('static', filename='mstile-144x144.png') }}">
-    <title>Checkservices</title>
+    <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
+    <title>Watchdigest</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='main.css') }}"/>
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}"/>
     <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
 </head>
-
 <body>
-    <h1>Service Tracking: {{ hostname }}</h1>
-    {% if services is defined and services %}
-    <table id="servicesTable">
+    <h1>{{ header_string }}</h1>
+    <table id="dockerTable">
         <thead>
             <tr>
                 <th>#</th>
-                <th>Service</th>
+                <th>Container Name</th>
                 <th><div class="white-round"></div></th>
-                <th>Description</th>
-                <th>Active since</th>
+                <th>Image</th>
+                <th>Digest</th>
+                <th>Size</th>
+                <th>Created</th>
             </tr>
-        </thead>
-        <tbody>
-            {% for service in services %}
+    </thead>
+    <tbody>
+        {% for item in data %}
             <tr>
-                <td data-label="Count">{{ service[0] }}</td>
-                <td data-label="Service"><span class="nowrap">{{ service[1] }}</span></td>
+                <td data-label="Count">{{ item.count }}</td>
+                <td data-label="Container Name"><span class="nowrap-container">{{ item.container_name }}</span></td>
                 <td data-label="Status">
-                    {% if service[3] == "0" %}
-                        <div class="green-round" title="Active"></div>
+                    {% if item.status == "outdated" %}
+                        <div class="orange-round" title="Outdated"></div>
+                    {% elif item.status == "uptodate" %}
+                        <div class="green-round" title="Updated"></div>
+                    {% elif item.status == "error" %}
+                        <div class="red-round" title="Error"></div>
+                    {% elif item.status == "unable" %}
+                        <div class="yellow-round" title="Unable check"></div>
                     {% else %}
-                        <div class="red-round" title="Inactive"></div>
+                        <div class="white-round" title="Unknown"></div>
                     {% endif %}
                 </td>
-                <td data-label="Description"><span class="nowrap">{{ service[2] }}</span></td>
-                <td data-label="Time"><span class="nowrap">{{ service[4] }}</span></td>
+                <td data-label="Image"><span class="nowrap-image">{{ item.image }}</span></td>
+                <td data-label="Digest"><span class="nowrap-digest">{{ item.digest }}</span></td>
+                <td data-label="Size"><span class="nowrap-size">{{ item.size }}</span></td>
+                <td data-label="Created"><span class="nowrap-created">{{ item.created }}</span></td>
             </tr>
-            {% endfor %}
-            
-            {% if exservices is defined and exservices %}
-            
-            <thead>
-            <tr>
-                <th>#</th>
-                <th>Skipped Service</th>
-                <th><div class="white-round"></div></th>
-                <th>Description</th>
-                <th>Status</th>
-            </tr>
-            </thead>
-            
-            {% for exservice in exservices %}
-            <tr>
-                <td data-label="Count">{{ exservice[0] }}</td>
-                <td data-label="Service"><span class="nowrap">{{ exservice[1] }}</span></td>
-                <td data-label="Status"><div class="yellow-round" title="Skipped"></div></td>
-                <td data-label="Description"><span class="nowrap">{{ exservice[2] }}</span></td>
-                <td data-label="Time"><span class="nowrap">{{ exservice[3] }}</span></td>
-            </tr>
-            {% endfor %}
-            {% endif %}
-        </tbody>
+        {% endfor %}
+</tbody>
+
     </table>
-  
-    {% else %}
-    <p>No services available to display. Check server logs for details.</p>
-    {% endif %}
-    <div class="copyright">
-        <span>Systemd Unit Files</span>
-        <span>Checkservices, © 2boom, 2024-2025</span>
+    <div class="log-section">
+        <div id="logContent"></div>
     </div>
-</body>
+    <div class="copyright">
+        <span id="nextRunTime" style="color: var(--mmenu); font-size: 0.95em;">{{ next_run_time_check }} | {{ next_run_time }}</span>
+        <span>Watchdigest, © 2boom, 2025</span>
+    </div>
+
 <script>
-    setInterval(function () {
-        const loadingElement = document.getElementById('loading');
-        if (loadingElement) {
-            loadingElement.style.display = 'block';
+        // Refresh the docker table
+        setInterval(function() {
+            fetch('/')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.text();
+                })
+                .then(html => {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(html, 'text/html');
+                    // Update table
+                    const newTable = doc.querySelector('#dockerTable');
+                    if (newTable && document.querySelector('#dockerTable')) {
+                        document.querySelector('#dockerTable').outerHTML = newTable.outerHTML;
+                    }
+                    // Update next run time
+                    const newNextRunTime = doc.querySelector('#nextRunTime');
+                    if (newNextRunTime && document.querySelector('#nextRunTime')) {
+                        document.querySelector('#nextRunTime').innerHTML = newNextRunTime.innerHTML;
+                    }
+                })
+                .catch(error => console.error('Error refreshing page:', error));
+        }, 30000);
+
+        let previousLogContent = '';
+
+        // Refresh logs
+        function fetchLogs() {
+            fetch('/logs')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.text();
+                })
+                .then(data => {
+                    const logContent = document.getElementById("logContent");
+                    logContent.innerHTML = data;
+                    if (data !== previousLogContent) {
+                        logContent.scrollTop = logContent.scrollHeight;
+                    }
+                    previousLogContent = data;
+                })
+                .catch(error => {
+                    console.error('Error fetching logs:', error);
+                    document.getElementById("logContent").innerHTML = "Failed to load logs.";
+                });
         }
 
-        fetch('/')
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                return response.text();
-            })
-            .then(html => {
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(html, 'text/html');
-                const newTable = doc.querySelector('#servicesTable');
-                const currentTable = document.querySelector('#servicesTable');
-
-                if (newTable && currentTable) {
-                    currentTable.replaceWith(newTable);  // more modern and robust
-                }
-
-                if (loadingElement) {
-                    loadingElement.style.display = 'none';
-                }
-            })
-            .catch(error => {
-                console.error('Error refreshing page:', error);
-                if (loadingElement) {
-                    loadingElement.style.display = 'none';
-                    loadingElement.textContent = 'Error refreshing data';
-                }
-            });
-    }, 30000);
-</script>
-
+        fetchLogs();
+        setInterval(fetchLogs, 5000);
+    </script>
+</body>
 </html>
