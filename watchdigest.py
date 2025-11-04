@@ -21,7 +21,7 @@ from collections import deque
 from docker.errors import APIError, NotFound, DockerException
 from urllib.parse import urlparse
 from datetime import datetime, time as dtime, timedelta
-from flask import Flask, render_template, jsonify, request, Response
+from flask import Flask, render_template, jsonify, request, Response, make_response
 
 default_start_times = ["03:00"]
 upgrade_mode = True
@@ -70,11 +70,6 @@ werkzeug_logger.disabled = True
 
 app = Flask(__name__)
 app.logger.disabled = True
-
-def cut_message_url(url):
-    """Truncate URL for logging brevity."""
-    parsed_url = urlparse(url)
-    return f"{parsed_url.scheme}://{parsed_url.netloc}...."
 
 
 def get_platform_base_url() -> str:
@@ -149,50 +144,49 @@ def send_message(message: str):
                 response.raise_for_status()
                 return
             except requests.exceptions.RequestException as e:
-                logger.error(f"Attempt {attempt + 1}/{max_attempts} - Error sending to {cut_message_url(url)}: {e}.")
+                logger.error("error_send_request_failed" + f" {attempt + 1}/{max_attempts} - {url}: {e}")
                 if attempt == max_attempts - 1:
-                    logger.error(f"Failed to send to {cut_message_url(url)} after {max_attempts} attempts.")
+                    logger.error("error_send_request_max_attempts" + f" {url}")
                 else:
                     backoff_time = (2 ** attempt) + random.uniform(0, 1)
-                    logger.warning(f"Retrying in {backoff_time:.2f} seconds...")
+                    logger.warning("log_retrying" + f" {backoff_time:.2f} seconds...")
                     time.sleep(backoff_time)
 
     def to_html_format(message: str) -> str:
-        """Convert message to HTML bold format."""
         message = ''.join(f"<b>{part}</b>" if i % 2 else part for i, part in enumerate(message.split('*')))
         return message.replace("\n", "<br>")
 
     def to_markdown_format(message: str, markdown_type: str) -> str:
-        """Format a message according to the specified markdown type."""
         formatters = {
             "html": lambda msg: to_html_format(msg),
             "markdown": lambda msg: msg.replace("*", "**"),
             "text": lambda msg: msg.replace("*", ""),
             "simplified": lambda msg: msg,
         }
-    
         formatter = formatters.get(markdown_type)
         if formatter:
             return formatter(message)
-    
-        logger.error(f"Unknown format '{markdown_type}'. Returning original message.")
+        logger.error("error_unknown_format" + f" '{markdown_type}'")
         return message
 
     for url, header, payload, format_message in zip(platform_webhook_url, platform_header, platform_payload, platform_format_message):
         data, ntfy = None, False
         formatted_message = to_markdown_format(message, format_message)
         header_json = header if header else None
-        for key in list(payload.keys()):
-            if key == "title":
-                delimiter = "<br>" if format_message == "html" else "\n"
-                header, formatted_message = formatted_message.split(delimiter, 1)
-                payload[key] = header.replace("*", "")
-            elif key == "extras":
-                formatted_message = formatted_message.replace("\n", "\n\n")
-                payload["message"] = formatted_message
-            elif key == "data":
-                ntfy = True
-            payload[key] = formatted_message if key in ["text", "content", "message", "body", "formatted_body", "data"] else payload[key]
+
+        if isinstance(payload, dict):
+            for key in list(payload.keys()):
+                if key == "title":
+                    delimiter = "<br>" if format_message == "html" else "\n"
+                    header, formatted_message = formatted_message.split(delimiter, 1)
+                    payload[key] = header.replace("*", "")
+                elif key == "extras":
+                    formatted_message = formatted_message.replace("\n", "\n\n")
+                    payload["message"] = formatted_message
+                elif key == "data":
+                    ntfy = True
+                payload[key] = formatted_message if key in ["text", "content", "message", "body", "formatted_body", "data"] else payload[key]
+
         payload_json = None if ntfy else payload
         data = formatted_message.encode("utf-8") if ntfy else None
         send_request(url, payload_json, data, header_json)
@@ -793,6 +787,15 @@ def get_starts_check_times(start_times, upgrade_mode):
             skip_hours.add((hours + 1) % 24)
 
     return [f"{hour:02d}:00" for hour in range(24) if hour not in skip_hours]
+
+
+@app.after_request
+def add_security_headers(response):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 @app.route("/logs")
