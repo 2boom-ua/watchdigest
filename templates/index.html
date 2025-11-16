@@ -12,7 +12,7 @@
     <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
 </head>
 <body>
-    <h1>{{ header_string }}</h1>
+    <h1><span>{{ header_string }}</span><span id="nextRunTime" class="h1_ext">{{ next_run_time_check }} | {{ next_run_time }}</span></h1>
     <table id="dockerTable">
         <thead>
             <tr>
@@ -56,7 +56,8 @@
         <div id="logContent"></div>
     </div>
     <div class="copyright">
-        <span id="nextRunTime" style="color: var(--mmenu); font-size: 0.95em;">{{ next_run_time_check }} | {{ next_run_time }}</span>
+        <!--<span id="nextRunTime" style="color: var(--mmenu); font-size: 0.95em;">{{ next_run_time_check }} | {{ next_run_time }}</span>
+        <span> </span>-->
         <span>Watchdigest, © 2boom, 2025</span>
     </div>
 
