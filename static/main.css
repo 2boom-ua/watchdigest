@@ -16,15 +16,14 @@
     --warning: #FF6433; /* Orange */
     --error: #FF2337; /* Red */
     --secondary: #F8AE3C; /* Yellow */
-    /*--bgwhite: #FCFCFC;*/
     --bgyellow: #FFCD66;
-    --bbyellow: #FAB120;
+    --bbyellow: #E0A424;
     --bggreen: #64B461;
     --bbgreen: #3E943B;
     --bgred: #ff2337;
     --bbred: #B81422;
     --bgorange: #FF6433;
-    --bborange: #F23C0E;
+    --bborange: #C43D1C;
     --bgwhite: #F5F5F5;
     --bggrey: #CFCFCF;
 }
@@ -93,11 +92,14 @@ body {
 }
 
 h1 {
+    display: flex;
+    justify-content: space-between;
     color: var(--mapp);
     font-size: 1em;
     margin: 5px 5px 8px;
 }
 
+/* Table Styles */
 .white-round {
         width: 13px;
         height: 13px;
@@ -190,7 +192,7 @@ td span[title] {
 
 .copyright {
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-end;
     align-items: center;
     margin-top: 8px;
     padding-bottom: 10px;
@@ -199,6 +201,12 @@ td span[title] {
 .copyright span {
     font-size: 0.85em;
     color: var(--mborder);
+}
+
+.h1_ext {
+    font-weight: normal;
+    font-size: 1.0em; 
+    color: var(--mapp);
 }
 
 /* Mobile view adjustments for 720px */
