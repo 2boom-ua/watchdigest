@@ -875,7 +875,8 @@ if __name__ == "__main__":
     docker_compose = compose_version.get('docker_compose_version', 'N/A')
     containerd_version = get_containerd_version()
     docker_containerd = containerd_version.get('containerd_version', 'N/A')
-    h1_string = f"Image Tracking: {node_name}"
+    h1_string = f"{node_name}"
+    
     monitoring_message = ""
 
     logger.info(f"Docker Engine: {docker_version} | Containerd: {docker_containerd} | Compose Plugin: {docker_compose}.")
