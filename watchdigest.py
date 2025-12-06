@@ -73,8 +73,11 @@ app.logger.disabled = True
 
 
 def get_platform_base_url() -> str:
-    """Return Docker socket path based on OS."""
-    return 'unix://var/run/docker.sock' if platform.system() == "Linux" else 'npipe:////./pipe/docker_engine'
+    """Returns the Docker socket path based on the OS."""
+    if platform.system() == "Linux" or platform.system() == "Darwin":
+        return 'unix://var/run/docker.sock'
+    elif platform.system() == "Windows":
+        return 'npipe:////./pipe/docker_engine'
 
 
 def get_docker_engine_info() -> dict:
@@ -972,4 +975,5 @@ if __name__ == "__main__":
 
     while True:
         schedule.run_pending()
+
         time.sleep(60)
