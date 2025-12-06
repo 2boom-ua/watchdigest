@@ -74,10 +74,12 @@ app.logger.disabled = True
 
 def get_platform_base_url() -> str:
     """Returns the Docker socket path based on the OS."""
-    if platform.system() == "Linux" or platform.system() == "Darwin":
+    system = platform.system()
+    if system in ("Linux", "Darwin"):
         return 'unix://var/run/docker.sock'
-    elif platform.system() == "Windows":
+    elif system == "Windows":
         return 'npipe:////./pipe/docker_engine'
+    return None
 
 
 def get_docker_engine_info() -> dict:
@@ -864,116 +866,118 @@ if __name__ == "__main__":
     file_db = os.path.join(os.path.dirname(os.path.realpath(__file__)), "data.db")
 
     platform_base_url = get_platform_base_url()
-    start_times = default_start_times
-
-    compose_files = default_compose_files
-
-    dots = {"orange": "\U0001F7E0", "green": "\U0001F7E2", "red": "\U0001F534", "yellow": "\U0001F7E1", "white": "\U000026AA"}
-    square_dots = {"orange": "\U0001F7E7", "green": "\U0001F7E9", "red": "\U0001F7E5", "yellow": "\U0001F7E8", "white": "\U0001F533"}
-
-    docker_info = get_docker_engine_info()
-    compose_version = get_compose_version()
-    node_name = docker_info.get('docker_engine_name', 'N/A')
-    docker_version = docker_info.get('docker_version', 'N/A')
-    docker_compose = compose_version.get('docker_compose_version', 'N/A')
-    containerd_version = get_containerd_version()
-    docker_containerd = containerd_version.get('containerd_version', 'N/A')
-    h1_string = f"{node_name}"
+    if platform_base_url:
+        start_times = default_start_times
     
-    monitoring_message = ""
-
-    logger.info(f"Docker Engine: {docker_version} | Containerd: {docker_containerd} | Compose Plugin: {docker_compose}.")
-
-    header_message = (
-        f"*{node_name}* (.digest)\n"
-        f"- docker engine: {docker_version},\n"
-        f"- containerd: {docker_containerd},\n"
-        f"- compose plugin: {docker_compose},\n"
-        f"- auto-upgrade mode: {'On' if upgrade_mode else 'Off'},\n"
-    )
-
-    if os.path.exists(file_db):
-        try:
-            with open(file_db, "r") as file:
-                old_list = file.readlines()
-        except Exception as e:
-            logger.warning(f"Unable to read {file_db}: {e}.")
-
-    if os.path.exists(config_file):
-        try:
-            with open(config_file, "r") as file:
-                config_json = json.load(file)
-            startup_message = config_json.get("STARTUP_MESSAGE", True)
-            notify_enabled = config_json.get("NOTIFY_ENABLED", False)
-            default_dot_style = config_json.get("DEFAULT_DOT_STYLE", True)
-            upgrade_mode = config_json.get("UPGRADE_MODE", True)
-            start_times = config_json.get("START_TIMES", default_start_times)
-            compose_files = config_json.get("COMPOSE_FILES", default_compose_files)
-            if not notify_enabled:
-                startup_message = False
-            
-            no_messaging_keys = ["STARTUP_MESSAGE", "NOTIFY_ENABLED", "DEFAULT_DOT_STYLE", "UPGRADE_MODE", "START_TIMES", "COMPOSE_FILES"]
-            if notify_enabled:
-                messaging_platforms = list(set(config_json) - set(no_messaging_keys))
-                for platform in messaging_platforms:
-                    if config_json[platform].get("ENABLED", False):
-                        for key, value in config_json[platform].items():
-                            platform_key = f"platform_{key.lower()}"
-                            if platform_key in globals():
-                                globals()[platform_key] = (globals()[platform_key] if isinstance(globals()[platform_key], list) else [globals()[platform_key]])
-                                globals()[platform_key].extend(value if isinstance(value, list) else [value])
-                            else:
-                                globals()[platform_key] = value if isinstance(value, list) else [value]
-                        monitoring_message += f"- messaging: {platform.lower().capitalize()},\n"
-                monitoring_message = "\n".join([*sorted(monitoring_message.splitlines()), ""])
-                monitoring_message += (
-                    f"- startup message: {'On' if startup_message else 'Off'},\n"
-                    f"- dot style: {'Round' if default_dot_style else 'Square'}.\n"
-                )
+        compose_files = default_compose_files
+    
+        dots = {"orange": "\U0001F7E0", "green": "\U0001F7E2", "red": "\U0001F534", "yellow": "\U0001F7E1", "white": "\U000026AA"}
+        square_dots = {"orange": "\U0001F7E7", "green": "\U0001F7E9", "red": "\U0001F7E5", "yellow": "\U0001F7E8", "white": "\U0001F533"}
+    
+        docker_info = get_docker_engine_info()
+        compose_version = get_compose_version()
+        node_name = docker_info.get('docker_engine_name', 'N/A')
+        docker_version = docker_info.get('docker_version', 'N/A')
+        docker_compose = compose_version.get('docker_compose_version', 'N/A')
+        containerd_version = get_containerd_version()
+        docker_containerd = containerd_version.get('containerd_version', 'N/A')
+        h1_string = f"{node_name}"
         
-                if all(value in globals() for value in ["platform_webhook_url", "platform_header", "platform_payload", "platform_format_message"]):
-                    if startup_message:
-                        send_message(f"{header_message}{monitoring_message}")
-        except (json.JSONDecodeError, ValueError, TypeError, KeyError) as e:
-            logger.error(f"Failed to read or parse config.json: {e}. Falling back to default settings.")
-    else:
-        logger.error(f"Configuration file 'config.json' not found. Falling back to default settings.")
-
-    if not default_dot_style:
-        dots = square_dots
-    orange_dot, green_dot, red_dot, yellow_dot, white_dot = dots.values()
-
-    header_message = header_message.split('\n')[0]
-    header_message = f"{header_message}\n"
-
-    flask_thread = threading.Thread(target=run_flask, daemon=True)
-    flask_thread.start()
+        monitoring_message = ""
     
-    logger.info(f"Initialization complete. Auto-upgrade mode: {'On' if upgrade_mode else 'Off'}.")
-    logger.info(f"Notifications to a messaging system: {'On' if notify_enabled else 'Off'}.")
-
-    try:
-        start_times_outdate_check = get_starts_check_times(start_times, upgrade_mode)
+        logger.info(f"Docker Engine: {docker_version} | Containerd: {docker_containerd} | Compose Plugin: {docker_compose}.")
+    
+        header_message = (
+            f"*{node_name}* (.digest)\n"
+            f"- docker engine: {docker_version},\n"
+            f"- containerd: {docker_containerd},\n"
+            f"- compose plugin: {docker_compose},\n"
+            f"- auto-upgrade mode: {'On' if upgrade_mode else 'Off'},\n"
+        )
+    
+        if os.path.exists(file_db):
+            try:
+                with open(file_db, "r") as file:
+                    old_list = file.readlines()
+            except Exception as e:
+                logger.warning(f"Unable to read {file_db}: {e}.")
+    
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, "r") as file:
+                    config_json = json.load(file)
+                startup_message = config_json.get("STARTUP_MESSAGE", True)
+                notify_enabled = config_json.get("NOTIFY_ENABLED", False)
+                default_dot_style = config_json.get("DEFAULT_DOT_STYLE", True)
+                upgrade_mode = config_json.get("UPGRADE_MODE", True)
+                start_times = config_json.get("START_TIMES", default_start_times)
+                compose_files = config_json.get("COMPOSE_FILES", default_compose_files)
+                if not notify_enabled:
+                    startup_message = False
+                
+                no_messaging_keys = ["STARTUP_MESSAGE", "NOTIFY_ENABLED", "DEFAULT_DOT_STYLE", "UPGRADE_MODE", "START_TIMES", "COMPOSE_FILES"]
+                if notify_enabled:
+                    messaging_platforms = list(set(config_json) - set(no_messaging_keys))
+                    for platform in messaging_platforms:
+                        if config_json[platform].get("ENABLED", False):
+                            for key, value in config_json[platform].items():
+                                platform_key = f"platform_{key.lower()}"
+                                if platform_key in globals():
+                                    globals()[platform_key] = (globals()[platform_key] if isinstance(globals()[platform_key], list) else [globals()[platform_key]])
+                                    globals()[platform_key].extend(value if isinstance(value, list) else [value])
+                                else:
+                                    globals()[platform_key] = value if isinstance(value, list) else [value]
+                            monitoring_message += f"- messaging: {platform.lower().capitalize()},\n"
+                    monitoring_message = "\n".join([*sorted(monitoring_message.splitlines()), ""])
+                    monitoring_message += (
+                        f"- startup message: {'On' if startup_message else 'Off'},\n"
+                        f"- dot style: {'Round' if default_dot_style else 'Square'}.\n"
+                    )
+            
+                    if all(value in globals() for value in ["platform_webhook_url", "platform_header", "platform_payload", "platform_format_message"]):
+                        if startup_message:
+                            send_message(f"{header_message}{monitoring_message}")
+            except (json.JSONDecodeError, ValueError, TypeError, KeyError) as e:
+                logger.error(f"Failed to read or parse config.json: {e}. Falling back to default settings.")
+        else:
+            logger.error(f"Configuration file 'config.json' not found. Falling back to default settings.")
+    
+        if not default_dot_style:
+            dots = square_dots
+        orange_dot, green_dot, red_dot, yellow_dot, white_dot = dots.values()
+    
+        header_message = header_message.split('\n')[0]
+        header_message = f"{header_message}\n"
+    
+        flask_thread = threading.Thread(target=run_flask, daemon=True)
+        flask_thread.start()
+        
+        logger.info(f"Initialization complete. Auto-upgrade mode: {'On' if upgrade_mode else 'Off'}.")
+        logger.info(f"Notifications to a messaging system: {'On' if notify_enabled else 'Off'}.")
+    
+        try:
+            start_times_outdate_check = get_starts_check_times(start_times, upgrade_mode)
+            if upgrade_mode:
+                logger.info(f"Using check times for image upgrade: {', '.join(start_times)}.")
+            next_run_time_check = get_next_start_time(start_times)
+            next_run_time = get_next_start_time(start_times)
+            logger.info(f"First scheduled image upgrade check: {next_run_time_check}.")
+        except (ValueError, TypeError) as e:
+            start_times_outdate_check = get_starts_check_times(default_start_times, upgrade_mode)
+            logger.error(f"Error: {e}")
+            logger.warning(f"Invalid start time settings in config.json. Falling back to default settings: {start_times}. Please update the configuration file.")
+    
+        checkonly_container_images()
+    
+        for stime in start_times_outdate_check:
+            schedule.every().day.at(stime).do(checkonly_container_images)
+    
         if upgrade_mode:
-            logger.info(f"Using check times for image upgrade: {', '.join(start_times)}.")
-        next_run_time_check = get_next_start_time(start_times)
-        next_run_time = get_next_start_time(start_times)
-        logger.info(f"First scheduled image upgrade check: {next_run_time_check}.")
-    except (ValueError, TypeError) as e:
-        start_times_outdate_check = get_starts_check_times(default_start_times, upgrade_mode)
-        logger.error(f"Error: {e}")
-        logger.warning(f"Invalid start time settings in config.json. Falling back to default settings: {start_times}. Please update the configuration file.")
-
-    checkonly_container_images()
-
-    for stime in start_times_outdate_check:
-        schedule.every().day.at(stime).do(checkonly_container_images)
-
-    if upgrade_mode:
-        for stime in start_times:
-            schedule.every().day.at(stime).do(maintain_container_images)
-
-    while True:
-        schedule.run_pending()
-
-        time.sleep(60)
+            for stime in start_times:
+                schedule.every().day.at(stime).do(maintain_container_images)
+    
+        while True:
+            schedule.run_pending()
+            time.sleep(60)
+    else:
+        logger.error("Unsupported operating system!")
