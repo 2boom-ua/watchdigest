@@ -338,7 +338,7 @@
             {"Content-Type": "application/json"}
         ],
         "PAYLOAD": [
-            {"message": "message"}
+            {"message": "message", "channel": "{channel}"}
         ],
         "FORMAT_MESSAGE": [
             "markdown"
