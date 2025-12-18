@@ -35,7 +35,7 @@
 **https://your_domain_name or http://server_ip:5151**
 
 ---
-## Config Notification
+### Config Notification
 Easily configure your settings with the [Multi-Platform Notification JSON Creator.](https://github.com/2boom-ua/mpn_json)
 
 ### Edit config.json:
