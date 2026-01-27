@@ -149,13 +149,16 @@ def send_message(message: str):
                 response.raise_for_status()
                 return
             except requests.exceptions.RequestException as e:
-                logger.error("error_send_request_failed" + f" {attempt + 1}/{max_attempts} - {url}: {e}")
+                err_type = type(e).__name__
+                status = f"Status {e.response.status_code}" if e.response else "No Response"
+                logger.error(f"[{attempt + 1}/{max_attempts}] {err_type} | {status}")
+    
                 if attempt == max_attempts - 1:
-                    logger.error("error_send_request_max_attempts" + f" {url}")
+                    logger.error(f"FAILED: Max retries reached for {url}")
                 else:
-                    backoff_time = (2 ** attempt) + random.uniform(0, 1)
-                    logger.warning("log_retrying" + f" {backoff_time:.2f} seconds...")
-                    time.sleep(backoff_time)
+                    backoff = (2 ** attempt) + random.uniform(0, 1)
+                    logger.warning(f"Retry in {backoff:.1f}s...")
+                    time.sleep(backoff)
 
     def to_html_format(message: str) -> str:
         message = ''.join(f"<b>{part}</b>" if i % 2 else part for i, part in enumerate(message.split('*')))
@@ -980,4 +983,5 @@ if __name__ == "__main__":
             schedule.run_pending()
             time.sleep(60)
     else:
+
         logger.error("Unsupported operating system!")
