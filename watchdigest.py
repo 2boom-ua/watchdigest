@@ -145,16 +145,18 @@ def send_message(message: str):
         max_attempts = 5
         for attempt in range(max_attempts):
             try:
-                response = requests.post(url, json=json_data, data=data, headers=headers, timeout=(5, 20))
+                response = requests.post(url, json=json_data, data=data, 
+                                        headers=headers, timeout=(5, 20))
                 response.raise_for_status()
-                return
+                return response
             except requests.exceptions.RequestException as e:
                 err_type = type(e).__name__
                 status = f"Status {e.response.status_code}" if e.response else "No Response"
                 logger.error(f"[{attempt + 1}/{max_attempts}] {err_type} | {status}")
-    
+                
                 if attempt == max_attempts - 1:
-                    logger.error(f"FAILED: Max retries reached for {url}")
+                    logger.error("Max retries exhausted")
+                    raise
                 else:
                     backoff = (2 ** attempt) + random.uniform(0, 1)
                     logger.warning(f"Retry in {backoff:.1f}s...")
@@ -985,3 +987,4 @@ if __name__ == "__main__":
     else:
 
         logger.error("Unsupported operating system!")
+
