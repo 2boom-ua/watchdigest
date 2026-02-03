@@ -1,4 +1,4 @@
-/* Copyright: 2boom 2023-25 */
+/* Copyright: 2boom 2023-2026 */
 :root {
     --mred: #FF9D9F;
     --myellow: #FFD38C;
@@ -311,4 +311,5 @@ td span[title] {
         overflow: hidden;
         text-overflow: ellipsis;
     }
+
 }
