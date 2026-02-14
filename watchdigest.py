@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# Copyright (c) 2025-2026 2boom.
+# Copyright (c) 2025 2boom.
 
 import json
 import docker
@@ -22,6 +22,13 @@ from docker.errors import APIError, NotFound, DockerException
 from urllib.parse import urlparse
 from datetime import datetime, time as dtime, timedelta
 from flask import Flask, render_template, jsonify, request, Response, make_response
+from flask_cors import CORS  # Added CORS support
+from requests.exceptions import (
+    HTTPError,
+    Timeout,
+    ConnectionError,
+    RequestException
+)
 
 default_start_times = ["03:00"]
 upgrade_mode = True
@@ -69,6 +76,7 @@ werkzeug_logger = logging.getLogger('werkzeug')
 werkzeug_logger.disabled = True
 
 app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
 app.logger.disabled = True
 
 
@@ -143,24 +151,43 @@ def send_message(message: str):
     """Send HTTP POST requests with retry logic."""
     def send_request(url, json_data=None, data=None, headers=None):
         max_attempts = 5
+    
         for attempt in range(max_attempts):
             try:
-                response = requests.post(url, json=json_data, data=data, 
-                                        headers=headers, timeout=(5, 20))
+                response = requests.post(
+                    url,
+                    json=json_data,
+                    data=data,
+                    headers=headers,
+                    timeout=(5, 20)
+                )
                 response.raise_for_status()
                 return response
-            except requests.exceptions.RequestException as e:
-                err_type = type(e).__name__
-                status = f"Status {e.response.status_code}" if e.response else "No Response"
-                logger.error(f"[{attempt + 1}/{max_attempts}] {err_type} | {status}")
-                
-                if attempt == max_attempts - 1:
-                    logger.error("Max retries exhausted")
-                    raise
+    
+            except HTTPError as e:
+                status = e.response.status_code if e.response else "?"
+                logger.error(f"[{attempt+1}/{max_attempts}] HTTP {status}")
+    
+            except Timeout:
+                logger.error(f"[{attempt+1}/{max_attempts}] Timeout")
+    
+            except ConnectionError as e:
+                msg = str(e).lower()
+                if "name resolution" in msg or "failed to resolve" in msg:
+                    logger.error(f"[{attempt+1}/{max_attempts}] DNS resolution failed")
                 else:
-                    backoff = (2 ** attempt) + random.uniform(0, 1)
-                    logger.warning(f"Retry in {backoff:.1f}s...")
-                    time.sleep(backoff)
+                    logger.error(f"[{attempt+1}/{max_attempts}] Connection error")
+    
+            except RequestException:
+                logger.error(f"[{attempt+1}/{max_attempts}] Request error")
+    
+            if attempt == max_attempts - 1:
+                logger.error("Max retries exhausted")
+                raise
+    
+            backoff = (2 ** attempt) + random.uniform(0, 1)
+            logger.warning(f"Retry in {backoff:.1f}s...")
+            time.sleep(backoff)
 
     def to_html_format(message: str) -> str:
         message = ''.join(f"<b>{part}</b>" if i % 2 else part for i, part in enumerate(message.split('*')))
@@ -985,7 +1012,4 @@ if __name__ == "__main__":
             schedule.run_pending()
             time.sleep(60)
     else:
-
         logger.error("Unsupported operating system!")
-
-
