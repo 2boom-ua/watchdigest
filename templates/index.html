@@ -12,12 +12,13 @@
     <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
 </head>
 <body>
+    <div class="table-scope">
     <h1><span>{{ header_string }}</span><span id="nextRunTime" class="h1_ext">{{ next_run_time_check }} | {{ next_run_time }}</span></h1>
     <table id="dockerTable">
         <thead>
             <tr>
                 <th>#</th>
-                <th>Container Name</th>
+                <th>Container</th>
                 <th><div class="white-round"></div></th>
                 <th>Image</th>
                 <th>Digest</th>
@@ -26,42 +27,51 @@
             </tr>
     </thead>
     <tbody>
-        {% for item in data %}
-            <tr>
-                <td data-label="Count">{{ item.count }}</td>
-                <td data-label="Container Name"><span class="nowrap-container">{{ item.container_name }}</span></td>
-                <td data-label="Status">
-                    {% if item.status == "outdated" %}
-                        <div class="orange-round" title="Outdated"></div>
-                    {% elif item.status == "uptodate" %}
-                        <div class="green-round" title="Updated"></div>
-                    {% elif item.status == "error" %}
-                        <div class="red-round" title="Error"></div>
-                    {% elif item.status == "unable" %}
-                        <div class="yellow-round" title="Unable check"></div>
-                    {% else %}
-                        <div class="white-round" title="Unknown"></div>
-                    {% endif %}
-                </td>
-                <td data-label="Image"><span class="nowrap-image">{{ item.image }}</span></td>
-                <td data-label="Digest"><span class="nowrap-digest">{{ item.digest }}</span></td>
-                <td data-label="Size"><span class="nowrap-size">{{ item.size }}</span></td>
-                <td data-label="Created"><span class="nowrap-created">{{ item.created }}</span></td>
-            </tr>
-        {% endfor %}
-</tbody>
+    {% for item in data %}
+        <tr>
+            <td data-label="Count">{{ item.count }}</td>
+            <td data-label="Container Name"><span class="nowrap-container">{{ item.container_name }}</span></td>
+            <td data-label="Status">
+                {% if item.status == "outdated" %}
+                    <div class="status-round orange-round" data-tooltip="Outdated"></div>
+                {% elif item.status == "uptodate" %}
+                    <div class="status-round green-round" data-tooltip="Up to date"></div>
+                {% elif item.status == "error" %}
+                    <div class="status-round red-round" data-tooltip="Error"></div>
+                {% elif item.status == "unable" %}
+                    <div class="status-round yellow-round" data-tooltip="Unable to check"></div>
+                {% else %}
+                    <div class="status-round white-round" data-tooltip="Unknown"></div>
+                {% endif %}
+            </td>
+            <td data-label="Image"><span class="nowrap-image">{{ item.image }}</span></td>
+            <td data-label="Digest"><span class="nowrap-digest">{{ item.digest }}</span></td>
+            <td data-label="Size"><span class="nowrap-size">{{ item.size }}</span></td>
+            <td data-label="Created"><span class="nowrap-created">{{ item.created }}</span></td>
+        </tr>
+    {% endfor %}
+    </tbody>
 
     </table>
     <div class="log-section">
         <div id="logContent"></div>
+        <div id="logError" class="log-error" style="display: none;"></div>
     </div>
     <div class="copyright">
-        <!--<span id="nextRunTime" style="color: var(--mmenu); font-size: 0.95em;">{{ next_run_time_check }} | {{ next_run_time }}</span>
-        <span> </span>-->
-        <span>Watchdigest, © 2boom, 2025</span>
-    </div>
+        <span>Watchdigest, © 2boom, 2025-2026</span>
+</div>
+</div>
 
 <script>
+        // Configuration
+        const LOG_REFRESH_INTERVAL = 5000; // 5 seconds
+        const TABLE_REFRESH_INTERVAL = 30000; // 30 seconds
+        const LOG_RETRY_ATTEMPTS = 3;
+        
+        let previousLogContent = '';
+        let logFetchAttempts = 0;
+        let logErrorDisplayed = false;
+
         // Refresh the docker table
         setInterval(function() {
             fetch('/')
@@ -86,12 +96,18 @@
                     }
                 })
                 .catch(error => console.error('Error refreshing page:', error));
-        }, 30000);
+        }, TABLE_REFRESH_INTERVAL);
 
-        let previousLogContent = '';
-
-        // Refresh logs
+        // Refresh logs with better error handling
         function fetchLogs() {
+            const logContent = document.getElementById("logContent");
+            const logError = document.getElementById("logError");
+            
+            // Don't try to fetch if we're on a mobile device (log section hidden)
+            if (window.innerWidth <= 720) {
+                return;
+            }
+            
             fetch('/logs')
                 .then(response => {
                     if (!response.ok) {
@@ -100,8 +116,21 @@
                     return response.text();
                 })
                 .then(data => {
-                    const logContent = document.getElementById("logContent");
-                    logContent.innerHTML = data;
+                    // Reset attempts on success
+                    logFetchAttempts = 0;
+                    
+                    // Hide error message if it was shown
+                    if (logErrorDisplayed) {
+                        logError.style.display = 'none';
+                        logContent.style.display = 'block';
+                        logErrorDisplayed = false;
+                    }
+                    
+                    // Convert newlines to <br> tags for HTML display
+                    const htmlData = data.replace(/\n/g, '<br>');
+                    logContent.innerHTML = htmlData;
+                    
+                    // Auto-scroll only if content changed
                     if (data !== previousLogContent) {
                         logContent.scrollTop = logContent.scrollHeight;
                     }
@@ -109,12 +138,58 @@
                 })
                 .catch(error => {
                     console.error('Error fetching logs:', error);
-                    document.getElementById("logContent").innerHTML = "Failed to load logs.";
+                    logFetchAttempts++;
+                    
+                    // Show error message in the log section
+                    if (!logErrorDisplayed) {
+                        logContent.style.display = 'none';
+                        logError.style.display = 'block';
+                        
+                        if (error.message.includes('Failed to fetch')) {
+                            logError.innerHTML = '⚠️ Cannot connect to log server. Make sure the backend is running and CORS is configured.';
+                        } else if (error.message.includes('404')) {
+                            logError.innerHTML = '⚠️ Log endpoint not found. The /logs route may not be implemented.';
+                        } else {
+                            logError.innerHTML = `⚠️ Failed to load logs: ${error.message}`;
+                        }
+                        logErrorDisplayed = true;
+                    }
+                    
+                    // If we've tried too many times, show a persistent message
+                    if (logFetchAttempts > LOG_RETRY_ATTEMPTS) {
+                        logError.innerHTML += '<br>⏸️ Stopping log fetch attempts. Please check your server configuration.';
+                        // Stop trying to fetch logs
+                        return;
+                    }
                 });
         }
 
-        fetchLogs();
-        setInterval(fetchLogs, 5000);
+        // Initial log fetch
+        setTimeout(() => {
+            fetchLogs();
+        }, 1000); // Delay first fetch to ensure page is loaded
+        
+        // Set up interval for log fetching
+        const logInterval = setInterval(fetchLogs, LOG_REFRESH_INTERVAL);
+        
+        // Stop log fetching on mobile
+        window.addEventListener('resize', function() {
+            if (window.innerWidth <= 720) {
+                // On mobile, clear the interval to stop fetch attempts
+                clearInterval(logInterval);
+                // Hide any error messages
+                const logError = document.getElementById("logError");
+                if (logError) {
+                    logError.style.display = 'none';
+                }
+            }
+        });
+
+        // Add a manual retry button (optional - you can add this to your HTML if needed)
+        function retryLogs() {
+            logFetchAttempts = 0;
+            fetchLogs();
+        }
     </script>
 </body>
 </html>
